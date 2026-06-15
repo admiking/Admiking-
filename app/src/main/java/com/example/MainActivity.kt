@@ -78,6 +78,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        handleWidgetIntent(intent)
+
         // Auto-start continuous daytime Azkar reminder if allowed and enabled
         val prefs = getSharedPreferences(com.example.data.AzkarOverlayService.PREFS_NAME, Context.MODE_PRIVATE)
         val isEnabled = prefs.getBoolean(com.example.data.AzkarOverlayService.KEY_ENABLED, true)
@@ -96,6 +98,17 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme(darkTheme = darkTheme) {
                 HayatyApp(viewModel)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleWidgetIntent(intent)
+    }
+
+    private fun handleWidgetIntent(intent: Intent?) {
+        if (intent?.action == "com.example.action.ADD_TASK") {
+            viewModel.triggerTaskAddDialog(true)
         }
     }
 
@@ -198,8 +211,38 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     val todayLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
     val usageRecords by viewModel.usageRecords.collectAsStateWithLifecycle()
 
+    val isUsingGps by viewModel.isUsingGps.collectAsStateWithLifecycle()
+    val gpsLatitude by viewModel.gpsLatitude.collectAsStateWithLifecycle()
+    val gpsLongitude by viewModel.gpsLongitude.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                      permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            viewModel.setUsingGps(true, context)
+        } else {
+            android.widget.Toast.makeText(context, "يرجى منح صلاحية الموقع لتحديد أوقات الصلاة بدقة عبر الأقمار الاصطناعية (GPS)", android.widget.Toast.LENGTH_LONG).show()
+            viewModel.setUsingGps(false, context)
+        }
+    }
+
     var showAddTaskDialog by remember { mutableStateOf(false) }
     var showCitySelectorDialog by remember { mutableStateOf(false) }
+
+    val showTaskAddDialogOnStart by viewModel.showTaskAddDialogOnStart.collectAsStateWithLifecycle()
+    LaunchedEffect(showTaskAddDialogOnStart) {
+        if (showTaskAddDialogOnStart) {
+            showAddTaskDialog = true
+            viewModel.triggerTaskAddDialog(false)
+        }
+    }
+
+    var activeTaskFilter by remember { mutableStateOf("remaining") } // "all", "remaining", "completed"
+    var quickTaskTitle by remember { mutableStateOf("") }
+    var quickTaskCategory by remember { mutableStateOf("عام") }
 
     val formattedDate = remember {
         val sdf = SimpleDateFormat("EEEE، d MMMM yyyy", Locale("ar"))
@@ -544,7 +587,15 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = selectedCity,
+                                text = if (isUsingGps) {
+                                    if (gpsLatitude != null && gpsLongitude != null) {
+                                        "📍 موقعي (${String.format(Locale.US, "%.2f", gpsLatitude)}، ${String.format(Locale.US, "%.2f", gpsLongitude)})"
+                                    } else {
+                                        "📍 موقعي (جاري التحديد...)"
+                                    }
+                                } else {
+                                    selectedCity
+                                },
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 fontWeight = FontWeight.Bold
@@ -599,28 +650,393 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
             }
         }
 
-        // --- TASKS LIST WIDGET ---
+        // --- POST-PRAYER QURAN TRACKER WIDGET ---
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            val quranStatus by viewModel.quranPostPrayerStatus.collectAsStateWithLifecycle()
+            val totalCompleted = quranStatus.values.count { it }
+            val totalPrayers = 5
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.12f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
             ) {
-                Text(
-                    text = "🎯 المهام والجدول",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "${tasks.count { !it.isCompleted }} متبقية",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "📖 تلاوة القرآن بعد كل صلاة",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                        
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "$totalCompleted من $totalPrayers صلوات",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "عقّب صلاتك بآيات من الذكر الحكيم لتنل الأجر العظيم والسكينة الدائمة.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Row of 5 prayers
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        val prayerKeys = listOf(
+                            Triple("Fajr", "الفجر", "سورة الإخلاص والمعوذات"),
+                            Triple("Dhuhr", "الظهر", "سورة الفاتحة وآيات البقرة"),
+                            Triple("Asr", "العصر", "سورة الإخلاص والمعوذتين"),
+                            Triple("Maghrib", "المغرب", "آية الكرسي وأواخر الحشر"),
+                            Triple("Isha", "العشاء", "سورة الملك الكريمة")
+                        )
+
+                        prayerKeys.forEach { (key, arabic, recommendedText) ->
+                            val isCompleted = quranStatus[key] == true
+                            var showReadDialog by remember { mutableStateOf(false) }
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isCompleted) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        showReadDialog = true
+                                    }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isCompleted) MaterialTheme.colorScheme.tertiary
+                                            else MaterialTheme.colorScheme.surfaceVariant
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isCompleted) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "مكتمل",
+                                            tint = MaterialTheme.colorScheme.onTertiary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.MenuBook,
+                                            contentDescription = "ابدأ القراءة",
+                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = arabic,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isCompleted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            if (showReadDialog) {
+                                Dialog(onDismissRequest = { showReadDialog = false }) {
+                                    Card(
+                                        shape = RoundedCornerShape(24.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(20.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "📖 تلاوة القرآن بعد صلاة $arabic",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.tertiary
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "الورد الموصى به: $recommendedText",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            
+                                            // Predefined verses for high quality simulation
+                                            val demoVerses = when (key) {
+                                                "Fajr" -> listOf(
+                                                    "قُلْ هُوَ اللَّهُ أَحَدٌ ۞ اللَّهُ الصَّمَدُ ۞ لَمْ يَلِدْ وَلَمْ يُولَدْ ۞ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ",
+                                                    "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۞ مِنْ شَرِّ مَا خَلَقَ ۞ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۞ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۞ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ"
+                                                )
+                                                "Dhuhr" -> listOf(
+                                                    "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ ۞ الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ ۞ الرَّحْمَٰنِ الرَّحِيمِ ۞ مَالِكِ يَوْمِ الدِّينِ ۞ إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ ۞ اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ"
+                                                )
+                                                "Maghrib" -> listOf(
+                                                    "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۚ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ..."
+                                                )
+                                                "Isha" -> listOf(
+                                                    "تَبَارَكَ الَّذِي بِيَدِهِ الْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ ۞ الَّذِي خَلَقَ الْمَوْتَ وَالْحَيَاةَ لِيَبْلُوَكُمْ أَيُّكُمْ أَحْسَنُ عَمَلًا..."
+                                                )
+                                                else -> listOf(
+                                                    "إِذَا جَاءَ نَصْرُ اللَّهِ وَالْفَتْحُ ۞ وَرَأَيْتَ النَّاسَ يَدْخُلُونَ فِي دِينِ اللَّهِ أَفْوَاجًا ۞ فَسَبِّحْ بِحَمْدِ رَبِّكَ وَاسْتَغْفِرْهُ ۚ إِنَّهُ كَانَ تَوَّابًا"
+                                                )
+                                            }
+
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth().padding(4.dp),
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                                shape = RoundedCornerShape(16.dp)
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(14.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    demoVerses.forEach { verse ->
+                                                        Text(
+                                                            text = verse,
+                                                            fontSize = 13.sp,
+                                                            textAlign = TextAlign.Center,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(20.dp))
+                                            
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.togglePostPrayerQuranReading(key)
+                                                        showReadDialog = false
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                                                    modifier = Modifier.weight(1.5f),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (isCompleted) "تراجع عن الإكمال" else "تمت القراءة تلقائياً ✓",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onTertiary
+                                                    )
+                                                }
+                                                
+                                                OutlinedButton(
+                                                    onClick = { showReadDialog = false },
+                                                    modifier = Modifier.weight(1f),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Text("إغلاق", fontSize = 11.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        if (tasks.isEmpty()) {
+        // --- TASKS LIST WIDGET (To-Do List Manager) ---
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                ),
+                border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Header & Active Task Count
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "🎯 قائمة المهام اليومية",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "${tasks.count { !it.isCompleted }} متبقية",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    // Integrated Quick Add Input Bar
+                    OutlinedTextField(
+                        value = quickTaskTitle,
+                        onValueChange = { quickTaskTitle = it },
+                        placeholder = { Text("أضف مهمة جديدة سريعة...", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth().testTag("quick_task_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    if (quickTaskTitle.isNotBlank()) {
+                                        viewModel.addTask(
+                                            title = quickTaskTitle.trim(),
+                                            description = "تمت إضافتها من قائمة المهام السريعة",
+                                            dueDate = System.currentTimeMillis(),
+                                            category = quickTaskCategory,
+                                            isAppointment = false
+                                        )
+                                        quickTaskTitle = ""
+                                    }
+                                },
+                                modifier = Modifier.testTag("quick_task_add_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "إضافة سريعة",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    )
+
+                    // Quick Category Badges Selection Flow
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val categories = listOf("عام", "عمل", "دراسة", "عبادة", "صحة")
+                        categories.forEach { cat ->
+                            val isSel = quickTaskCategory == cat
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSel) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { quickTaskCategory = cat }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = cat,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Interactive Status Navigation Tabs (All, Active, Completed)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                            .padding(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val filters = listOf(
+                            Triple("remaining", "المتبقية ⏳", tasks.count { !it.isCompleted }),
+                            Triple("completed", "المكتملة ✓", tasks.count { it.isCompleted }),
+                            Triple("all", "الكل 📁", tasks.size)
+                        )
+                        filters.forEach { (filterType, label, count) ->
+                            val isSel = activeTaskFilter == filterType
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                    .clickable { activeTaskFilter = filterType }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "$label ($count)",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- FILTERED TASKS RENDERING LIST ---
+        val filteredTasks = when (activeTaskFilter) {
+            "remaining" -> tasks.filter { !it.isCompleted }
+            "completed" -> tasks.filter { it.isCompleted }
+            else -> tasks
+        }
+
+        if (filteredTasks.isEmpty()) {
             item {
                 Box(
                     modifier = Modifier
@@ -632,37 +1048,31 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "لا يوجد مهام",
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            modifier = Modifier.size(64.dp)
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            modifier = Modifier.size(54.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                        val emptyLabel = when (activeTaskFilter) {
+                            "remaining" -> "لا متبقي اليوم! يومك مميز ونظيف 🌱"
+                            "completed" -> "لم تنجز مهاماً اليوم بعد. ابدأ الآن! 💪"
+                            else -> "قائمتك فارغة الآن. أضف مهامك الأولى!"
+                        }
                         Text(
-                            text = "يومك نظيف! لا توجد مهام حالية.",
+                            text = emptyLabel,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                            fontSize = 14.sp
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
             }
         } else {
-            items(tasks.filter { !it.isCompleted }.take(4)) { task ->
-                TaskRowItem(task = task, onToggle = { viewModel.toggleTaskCompletion(task) }, onDelete = { viewModel.deleteTask(task) })
-            }
-        }
-
-        // --- COMPLETED TASKS IF ANY ---
-        val completedTasks = tasks.filter { it.isCompleted }
-        if (completedTasks.isNotEmpty()) {
-            item {
-                Text(
-                    text = "✓ مهام تم إنجازها",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            items(filteredTasks) { task ->
+                TaskRowItem(
+                    task = task,
+                    onToggle = { viewModel.toggleTaskCompletion(task) },
+                    onDelete = { viewModel.deleteTask(task) }
                 )
-            }
-            items(completedTasks.take(3)) { task ->
-                TaskRowItem(task = task, onToggle = { viewModel.toggleTaskCompletion(task) }, onDelete = { viewModel.deleteTask(task) })
             }
         }
 
@@ -719,11 +1129,57 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     modifier = Modifier.padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "اختر المدينة لحساب المواقيت", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "طريقة تحديد مواقيت الصلاة", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Navigation GPS Tracker Selector Option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isUsingGps) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .clickable {
+                                locationPermissionLauncher.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                                showCitySelectorDialog = false
+                            }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "GPS Auto Positioning",
+                            tint = if (isUsingGps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "📍 تحديد تلقائي (نظام الملاحة GPS)",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isUsingGps) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "أو اختر يدوياً من المدن المتاحة:",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     for (city in PrayerTimesHelper.cities) {
                         TextButton(
                             onClick = {
+                                viewModel.setUsingGps(false, context)
                                 viewModel.setCity(city)
                                 showCitySelectorDialog = false
                             },

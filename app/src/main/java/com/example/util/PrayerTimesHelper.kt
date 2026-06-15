@@ -8,6 +8,63 @@ data class PrayerTime(val name: String, val arabicName: String, val time: String
 object PrayerTimesHelper {
     val cities = listOf("مكة المكرمة", "الرياض", "القاهرة", "دبي", "القدس الشريف", "عمان", "بغداد")
 
+    val cityCoordinates = mapOf(
+        "مكة المكرمة" to Pair(21.3891, 39.8579),
+        "الرياض" to Pair(24.7136, 46.6753),
+        "القاهرة" to Pair(30.0444, 31.2357),
+        "دبي" to Pair(25.2048, 55.2708),
+        "القدس الشريف" to Pair(31.7683, 35.2137),
+        "عمان" to Pair(31.9454, 35.9284),
+        "بغداد" to Pair(33.3152, 44.3661)
+    )
+
+    fun getPrayerTimesForCoordinates(latitude: Double, longitude: Double, date: Date = Date()): List<PrayerTime> {
+        // Find closest reference city using Euclidean distance
+        var nearestCityName = "مكة المكرمة"
+        var minDistance = Double.MAX_VALUE
+        cityCoordinates.forEach { (city, coords) ->
+            val dist = java.lang.Math.sqrt(
+                java.lang.Math.pow(latitude - coords.first, 2.0) +
+                java.lang.Math.pow(longitude - coords.second, 2.0)
+            )
+            if (dist < minDistance) {
+                minDistance = dist
+                nearestCityName = city
+            }
+        }
+
+        // Fetch standard times for the closest reference city
+        val baseTimes = getPrayerTimesForCity(nearestCityName, date)
+
+        // Longitudinal shift offset: 1 degree difference equals 4 minutes of solar time adjustment
+        // east is earlier (-), west is later (+)
+        val refCoords = cityCoordinates[nearestCityName] ?: Pair(21.3891, 39.8579)
+        val longitudeDifference = longitude - refCoords.second
+        val longitudeTimeShift = -kotlin.math.round(longitudeDifference * 4.0).toInt()
+
+        val sdf = SimpleDateFormat("HH:mm", Locale.US)
+
+        return baseTimes.map { prayer ->
+            try {
+                val parts = prayer.time.split(":")
+                val hour = parts[0].toInt()
+                val minute = parts[1].toInt()
+
+                val cal = Calendar.getInstance().apply {
+                    this.time = date
+                    set(Calendar.HOUR_OF_DAY, hour)
+                    set(Calendar.MINUTE, minute)
+                    set(Calendar.SECOND, 0)
+                }
+                cal.add(Calendar.MINUTE, longitudeTimeShift)
+                val finalTimeStr = sdf.format(cal.time)
+                prayer.copy(time = finalTimeStr)
+            } catch (e: Exception) {
+                prayer
+            }
+        }
+    }
+
     fun getPrayerTimesForCity(cityName: String, date: Date = Date()): List<PrayerTime> {
         val calendar = Calendar.getInstance().apply { time = date }
         val dayOfYear = calendar.get(Calendar.DAY_OF_YEAR)

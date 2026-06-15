@@ -83,6 +83,28 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
                     }
                 }
             }
+        } else if (action == "com.example.widget.DELETE_TASK") {
+            val taskId = intent.getIntExtra("task_id", -1)
+            if (taskId != -1) {
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val db = AppDatabase.getDatabase(context)
+                        val task = db.taskDao().getTaskById(taskId)
+                        if (task != null) {
+                            db.taskDao().deleteTaskById(taskId)
+                            
+                            // Trigger update to all widgets
+                            triggerUpdate(context)
+                            HayatyWidgetProvider.triggerUpdate(context)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            }
         }
     }
 
@@ -125,6 +147,7 @@ private suspend fun updateTasksWidget(
         val titleIds = listOf(R.id.widget_task_title_1, R.id.widget_task_title_2, R.id.widget_task_title_3)
         val catIds = listOf(R.id.widget_task_cat_1, R.id.widget_task_cat_2, R.id.widget_task_cat_3)
         val checkIds = listOf(R.id.widget_task_check_1, R.id.widget_task_check_2, R.id.widget_task_check_3)
+        val deleteIds = listOf(R.id.widget_task_delete_1, R.id.widget_task_delete_2, R.id.widget_task_delete_3)
 
         for (i in 0 until 3) {
             if (i < tasksToRender.size) {
@@ -148,11 +171,37 @@ private suspend fun updateTasksWidget(
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
                 views.setOnClickPendingIntent(checkIds[i], pendingCheckIntent)
+
+                // Click Intent for the delete button
+                val deleteIntent = Intent(context, HayatyTasksWidgetProvider::class.java).apply {
+                    action = "com.example.widget.DELETE_TASK"
+                    putExtra("task_id", task.id)
+                }
+                val pendingDeleteIntent = PendingIntent.getBroadcast(
+                    context,
+                    task.id + 10000,
+                    deleteIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                views.setOnClickPendingIntent(deleteIds[i], pendingDeleteIntent)
             } else {
                 views.setViewVisibility(rowIds[i], View.GONE)
             }
         }
     }
+
+    // Click Intent for the "Add task" button in the widget header
+    val addTaskIntent = Intent(context, com.example.MainActivity::class.java).apply {
+        action = "com.example.action.ADD_TASK"
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    }
+    val pendingAddTaskIntent = PendingIntent.getActivity(
+        context,
+        101,
+        addTaskIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+    views.setOnClickPendingIntent(R.id.widget_add_task, pendingAddTaskIntent)
 
     // click pending intent on the entire widget or title card to launch the main app
     val appIntent = Intent(context, com.example.MainActivity::class.java).apply {

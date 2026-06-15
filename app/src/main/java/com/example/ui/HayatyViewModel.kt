@@ -101,13 +101,134 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             .apply()
     }
 
-    // --- Prayer Times State ---
+    // --- Prayer Times State (GPS-Aware Unified Core) ---
     private val _selectedCity = MutableStateFlow(prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة")
     val selectedCity: StateFlow<String> = _selectedCity.asStateFlow()
 
-    val prayerTimes: StateFlow<List<PrayerTime>> = combine(_selectedCity, _currentDate) { city, _ ->
-        PrayerTimesHelper.getPrayerTimesForCity(city)
+    private val _isUsingGps = MutableStateFlow(prefs.getBoolean("IsUsingGps", false))
+    val isUsingGps: StateFlow<Boolean> = _isUsingGps.asStateFlow()
+
+    private val _gpsLatitude = MutableStateFlow<Double?>(
+        if (prefs.contains("GpsLatitude")) prefs.getFloat("GpsLatitude", 0f).toDouble() else null
+    )
+    val gpsLatitude: StateFlow<Double?> = _gpsLatitude.asStateFlow()
+
+    private val _gpsLongitude = MutableStateFlow<Double?>(
+        if (prefs.contains("GpsLongitude")) prefs.getFloat("GpsLongitude", 0f).toDouble() else null
+    )
+    val gpsLongitude: StateFlow<Double?> = _gpsLongitude.asStateFlow()
+
+    val prayerTimes: StateFlow<List<PrayerTime>> = combine(
+        _selectedCity,
+        _currentDate,
+        _isUsingGps,
+        _gpsLatitude,
+        _gpsLongitude
+    ) { city, _, usingGps, lat, lon ->
+        if (usingGps && lat != null && lon != null) {
+            PrayerTimesHelper.getPrayerTimesForCoordinates(lat, lon)
+        } else {
+            PrayerTimesHelper.getPrayerTimesForCity(city)
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setUsingGps(enabled: Boolean, context: Context) {
+        _isUsingGps.value = enabled
+        prefs.edit().putBoolean("IsUsingGps", enabled).apply()
+        if (enabled) {
+            fetchGpsLocation(context)
+        }
+        com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+        com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
+    }
+
+    fun updateGpsCoordinates(lat: Double, lon: Double) {
+        _gpsLatitude.value = lat
+        _gpsLongitude.value = lon
+        prefs.edit()
+            .putFloat("GpsLatitude", lat.toFloat())
+            .putFloat("GpsLongitude", lon.toFloat())
+            .apply()
+        com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+        com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
+    }
+
+    fun fetchGpsLocation(context: Context) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        try {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+            if (locationManager != null) {
+                val isGpsEnabled = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                val isNetworkEnabled = locationManager.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+
+                var bestLocation: android.location.Location? = null
+                if (isGpsEnabled) {
+                    bestLocation = locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                }
+                if (bestLocation == null && isNetworkEnabled) {
+                    bestLocation = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                }
+
+                if (bestLocation != null) {
+                    updateGpsCoordinates(bestLocation.latitude, bestLocation.longitude)
+                }
+
+                // Request single quick high fidelity update
+                val provider = if (isGpsEnabled) android.location.LocationManager.GPS_PROVIDER else android.location.LocationManager.NETWORK_PROVIDER
+                locationManager.requestSingleUpdate(
+                    provider,
+                    object : android.location.LocationListener {
+                        override fun onLocationChanged(location: android.location.Location) {
+                            updateGpsCoordinates(location.latitude, location.longitude)
+                        }
+                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onProviderDisabled(provider: String) {}
+                    },
+                    null
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // --- Quran Achievement Status After Each Prayer (ورد ما بعد الصلاة) ---
+    private val _quranPostPrayerStatus = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val quranPostPrayerStatus: StateFlow<Map<String, Boolean>> = _quranPostPrayerStatus.asStateFlow()
+
+    fun loadPostPrayerQuranStatus() {
+        val today = getTodayDateString()
+        val prayers = listOf("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha")
+        val map = prayers.associateWith { prayer ->
+            prefs.getBoolean("quran_after_${prayer}_$today", false)
+        }
+        _quranPostPrayerStatus.value = map
+    }
+
+    fun togglePostPrayerQuranReading(prayerName: String) {
+        val today = getTodayDateString()
+        val currentVal = _quranPostPrayerStatus.value[prayerName] ?: false
+        val newVal = !currentVal
+        
+        prefs.edit().putBoolean("quran_after_${prayerName}_$today", newVal).apply()
+        
+        val updatedMap = _quranPostPrayerStatus.value.toMutableMap().apply {
+            put(prayerName, newVal)
+        }
+        _quranPostPrayerStatus.value = updatedMap
+    }
 
     // --- AI Advising State ---
     private val _aiProductivityAdvice = MutableStateFlow<String?>(null)
@@ -151,7 +272,16 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             updateMonthlyHabitAlertState()
+            loadPostPrayerQuranStatus()
         }
+    }
+
+    // --- Task Add Dialog Trigger on Startup (Widget link) ---
+    private val _showTaskAddDialogOnStart = MutableStateFlow(false)
+    val showTaskAddDialogOnStart: StateFlow<Boolean> = _showTaskAddDialogOnStart.asStateFlow()
+
+    fun triggerTaskAddDialog(show: Boolean) {
+        _showTaskAddDialogOnStart.value = show
     }
 
     // --- Task Actions ---

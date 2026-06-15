@@ -25,13 +25,17 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/widget_refresh_label"
+            android:id="@+id/widget_add_task"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentStart="true"
-            android:text="اضغط للإنجاز ✨"
-            android:textColor="#94A3B8"
-            android:textSize="10sp" />
+            android:text="إضافة مهمة ➕"
+            android:textColor="#F59E0B"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground" />
     </RelativeLayout>
 
     <!-- Divider -->
@@ -59,6 +63,18 @@
             android:padding="6dp"
             android:layout_marginBottom="4dp"
             android:visibility="gone">
+
+            <!-- Delete target -->
+            <TextView
+                android:id="@+id/widget_task_delete_1"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:text="🗑️"
+                android:gravity="center"
+                android:textSize="11sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"/>
 
             <!-- Category -->
             <TextView
@@ -110,6 +126,18 @@
             android:layout_marginBottom="4dp"
             android:visibility="gone">
 
+            <!-- Delete target -->
+            <TextView
+                android:id="@+id/widget_task_delete_2"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:text="🗑️"
+                android:gravity="center"
+                android:textSize="11sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"/>
+
             <!-- Category -->
             <TextView
                 android:id="@+id/widget_task_cat_2"
@@ -159,6 +187,18 @@
             android:padding="6dp"
             android:layout_marginBottom="4dp"
             android:visibility="gone">
+
+            <!-- Delete target -->
+            <TextView
+                android:id="@+id/widget_task_delete_3"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:text="🗑️"
+                android:gravity="center"
+                android:textSize="11sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"/>
 
             <!-- Category -->
             <TextView
