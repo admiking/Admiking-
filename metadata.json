@@ -1,0 +1,6 @@
+{
+  "name": "حياتي",
+  "description": "تطبيق متكامل لتنظيم المهام اليومية، تتبع العادات، مواقيت الصلاة والقرآن، مراقبة استخدام الهاتف بالذكاء الاصطناعي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
