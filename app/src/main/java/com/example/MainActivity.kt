@@ -15,6 +15,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -139,8 +141,11 @@ fun HayatyApp(viewModel: HayatyViewModel) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (isFocusActive) {
+            val focusTasks by viewModel.allTasks.collectAsStateWithLifecycle()
             FocusActiveOverlay(
                 remainingSeconds = focusSeconds,
+                tasks = focusTasks,
+                onToggleTask = { task -> viewModel.toggleTaskCompletion(task) },
                 onCancel = { viewModel.stopFocusMode() }
             )
         } else {
@@ -210,6 +215,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     val selectedCity by viewModel.selectedCity.collectAsStateWithLifecycle()
     val habits by viewModel.allHabits.collectAsStateWithLifecycle()
     val todayLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
+    val allHabitLogs by viewModel.allHabitLogs.collectAsStateWithLifecycle()
     val usageRecords by viewModel.usageRecords.collectAsStateWithLifecycle()
 
     val isUsingGps by viewModel.isUsingGps.collectAsStateWithLifecycle()
@@ -232,6 +238,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
 
     var showAddTaskDialog by remember { mutableStateOf(false) }
     var showCitySelectorDialog by remember { mutableStateOf(false) }
+    var selectedPrayerDetailKey by remember { mutableStateOf<String?>(null) }
 
     val showTaskAddDialogOnStart by viewModel.showTaskAddDialogOnStart.collectAsStateWithLifecycle()
     LaunchedEffect(showTaskAddDialogOnStart) {
@@ -619,22 +626,37 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         val currentHourStr = SimpleDateFormat("HH:mm", Locale.US).format(Date())
                         prayerTimes.forEach { prayer ->
                             val isPassed = prayer.time < currentHourStr
+                            val isSelected = selectedPrayerDetailKey == prayer.name
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        selectedPrayerDetailKey = if (isSelected) null else prayer.name
+                                    }
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                        else Color.Transparent
+                                    )
+                                    .padding(vertical = 8.dp)
                             ) {
                                 Text(
                                     text = prayer.arabicName,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = if (!isPassed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                            else if (!isPassed) MaterialTheme.colorScheme.primary 
+                                            else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = prayer.time,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (!isPassed) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                            else if (!isPassed) MaterialTheme.colorScheme.secondary 
+                                            else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 if (!isPassed) {
@@ -644,6 +666,70 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                             .background(MaterialTheme.colorScheme.tertiary, CircleShape)
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    if (selectedPrayerDetailKey != null) {
+                        val key = selectedPrayerDetailKey
+                        val recommendationText = when (key) {
+                            "Fajr" -> "سورة الإخلاص والمعوذات ثلاث مرات للتحصين الصباحي والبركة والنشاط ☀️"
+                            "Dhuhr" -> "قراءة آية الكرسي عقب الفريضة وسورة الفاتحة وآيات البقرة للهدى وفتح الرزق 💼"
+                            "Asr" -> "الاستغفار 100 مرة وسورة الإخلاص والمعوذتين للنقاء النفسي والتركيز 🧘"
+                            "Maghrib" -> "أذكار المساء، آية الكرسي، وخواتيم سورة الحشر للحفظ التام والسكينة 🌙"
+                            "Isha" -> "سورة الملك الكريمة المنجية من عذاب القبر والهدوء وسكينة النوم 🌌"
+                            else -> "تلاوة ما تيسر من الذكر وجوامع الكلم من الأدعية المأثورة عقب الصلاة 🌿"
+                        }
+                        val prayerArabic = when (key) {
+                            "Fajr" -> "الفجر"
+                            "Dhuhr" -> "الظهر"
+                            "Asr" -> "العصر"
+                            "Maghrib" -> "المغرب"
+                            "Isha" -> "العشاء"
+                            else -> "الصلاة"
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "💡 توصية تلاوة صلاة $prayerArabic",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    IconButton(
+                                        onClick = { selectedPrayerDetailKey = null },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "إغلاق",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = recommendationText,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 15.sp,
+                                    textAlign = TextAlign.Right,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -876,6 +962,234 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // --- HABIT TRACKER INTERACTIVE WIDGET ---
+        item {
+            var quickHabitName by remember { mutableStateOf("") }
+            val todayHabitLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .testTag("home_habits_widget"),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🌱 تعقب العادات والالتزام",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            val completedCount = habits.count { h -> todayHabitLogs.any { it.habitId == h.id } }
+                            Text(
+                                text = "مكتمل: $completedCount من ${habits.size}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "اضغط على زر النجمة لتسجيل التزامك اليومي وتنمية سلسلة أيامك 🌱",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    HabitsRechartsChart(habits = habits, logs = allHabitLogs, viewModel = viewModel)
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (habits.isEmpty()) {
+                        Text(
+                            text = "لا توجد عادات حالياً. استخدم الحقل أدناه لإضافة عادتك الأولى سريعا!",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp)
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            habits.forEach { habit ->
+                                val isCompleted = todayHabitLogs.any { it.habitId == habit.id }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+                                        .clickable { viewModel.toggleHabit(habit) }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isCompleted) MaterialTheme.colorScheme.primary 
+                                                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isCompleted) Icons.Default.Check else Icons.Default.Star,
+                                                contentDescription = "التزام",
+                                                tint = if (isCompleted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column {
+                                            Text(
+                                                text = habit.name,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isCompleted) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Whatshot,
+                                                        contentDescription = "سلسلة الالتزام",
+                                                        tint = if (habit.streak > 0) Color(0xFFFF6D00) else Color.Gray,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = "سلسلة الالتزام: ${habit.streak} أيام متواصلة",
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                
+                                                val targetTime = viewModel.getHabitTargetTime(habit.id)
+                                                if (!targetTime.isNullOrBlank()) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Schedule,
+                                                            contentDescription = "المستهدف",
+                                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(3.dp))
+                                                        Text(
+                                                            text = "المستهدف: $targetTime",
+                                                            fontSize = 10.sp,
+                                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                                                        )
+                                                    }
+                                                }
+                                                
+                                                if (isCompleted) {
+                                                    val compTime = viewModel.getHabitCompletionTime(habit.id, viewModel.currentDate.value)
+                                                    if (compTime != null) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.CheckCircle,
+                                                                contentDescription = "وقت الإنجاز",
+                                                                tint = Color(0xFF4CAF50),
+                                                                modifier = Modifier.size(11.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(3.dp))
+                                                            Text(
+                                                                text = "أُنحز $compTime",
+                                                                fontSize = 10.sp,
+                                                                color = Color(0xFF4CAF50)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    IconButton(
+                                        onClick = { viewModel.deleteHabit(habit.id) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "حذف العادة",
+                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Quick Add Habit Text Bar
+                    OutlinedTextField(
+                        value = quickHabitName,
+                        onValueChange = { quickHabitName = it },
+                        placeholder = { Text("أضف عادة جديدة سريعة... (مثال: شرب الماء 💧)", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth().testTag("quick_habit_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    if (quickHabitName.isNotBlank()) {
+                                        viewModel.addHabit(quickHabitName.trim())
+                                        quickHabitName = ""
+                                    }
+                                },
+                                modifier = Modifier.testTag("quick_habit_add_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "إضافة سريعة",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -1925,19 +2239,62 @@ fun HabitsScreen(viewModel: HayatyViewModel) {
                             color = if (isCompleted) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Whatshot,
-                                contentDescription = "سلسلة الالتزام",
-                                tint = if (habit.streak > 0) Color(0xFFFF6D00) else Color.Gray,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "سلسلة الالتزام: ${habit.streak} أيام متواصلة",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Whatshot,
+                                    contentDescription = "سلسلة الالتزام",
+                                    tint = if (habit.streak > 0) Color(0xFFFF6D00) else Color.Gray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "سلسلة الالتزام: ${habit.streak} أيام متواصلة",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            
+                            val targetTime = viewModel.getHabitTargetTime(habit.id)
+                            if (!targetTime.isNullOrBlank()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = "المستهدف",
+                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "المستهدف: $targetTime",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+                                    )
+                                }
+                            }
+                            
+                            if (isCompleted) {
+                                val compTime = viewModel.getHabitCompletionTime(habit.id, viewModel.currentDate.value)
+                                if (compTime != null) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "وقت الإنجاز",
+                                            tint = Color(0xFF4CAF50),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "أُنحز $compTime",
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF4CAF50)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -1960,12 +2317,364 @@ fun HabitsScreen(viewModel: HayatyViewModel) {
     if (showAddHabitDialog) {
         AddHabitDialog(
             onDismiss = { showAddHabitDialog = false },
-            onConfirm = { name ->
-                viewModel.addHabit(name)
+            onConfirm = { name, targetTime ->
+                viewModel.addHabit(name, targetTime)
                 showAddHabitDialog = false
             }
         )
     }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun HabitsRechartsChart(habits: List<com.example.data.Habit>, logs: List<com.example.data.HabitLog>, viewModel: HayatyViewModel) {
+    val dataJson = remember(habits, logs) {
+        val cal = Calendar.getInstance()
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val dayFormat = SimpleDateFormat("E", Locale("ar"))
+        
+        val list = mutableListOf<Map<String, Any>>()
+        
+        for (i in 6 downTo 0) {
+            val loopCal = Calendar.getInstance()
+            loopCal.add(Calendar.DAY_OF_YEAR, -i)
+            val dateStr = sdf.format(loopCal.time)
+            val dayLabel = dayFormat.format(loopCal.time)
+            
+            val totalHabits = habits.size
+            val completedLogsCount = logs.count { log -> log.date == dateStr && log.isCompleted }
+            
+            val completionTimes = habits.mapNotNull { h ->
+                viewModel.getHabitCompletionTime(h.id, dateStr)
+            }
+            val latestTime = if (completionTimes.isNotEmpty()) completionTimes.maxOrNull() ?: "--:--" else "غير محدد"
+            
+            list.add(
+                mapOf(
+                    "date" to dateStr,
+                    "dayLabel" to dayLabel,
+                    "completed" to completedLogsCount,
+                    "total" to totalHabits,
+                    "latestTime" to latestTime
+                )
+            )
+        }
+        
+        val jsonBuilder = StringBuilder("[")
+        list.forEachIndexed { idx, map ->
+            jsonBuilder.append("{")
+            jsonBuilder.append("\"date\":\"${map["date"]}\",")
+            jsonBuilder.append("\"dayLabel\":\"${map["dayLabel"]}\",")
+            jsonBuilder.append("\"completed\":${map["completed"]},")
+            jsonBuilder.append("\"total\":${map["total"]},")
+            jsonBuilder.append("\"latestTime\":\"${map["latestTime"]}\"")
+            jsonBuilder.append("}")
+            if (idx < list.size - 1) jsonBuilder.append(",")
+        }
+        jsonBuilder.append("]")
+        jsonBuilder.toString()
+    }
+
+    val primaryColorHex = String.format("#%06X", 0xFFFFFF and MaterialTheme.colorScheme.primary.toArgb())
+    val backgroundColorHex = String.format("#%06X", 0xFFFFFF and MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f).toArgb())
+    val onBackgroundHex = String.format("#%06X", 0xFFFFFF and MaterialTheme.colorScheme.onSurface.toArgb())
+    val surfaceColorHex = String.format("#%06X", 0xFFFFFF and MaterialTheme.colorScheme.surface.toArgb())
+    val outlineColorHex = String.format("#%06X", 0xFFFFFF and MaterialTheme.colorScheme.outline.toArgb())
+
+    val htmlTemplate = remember(dataJson, primaryColorHex, backgroundColorHex, onBackgroundHex, surfaceColorHex, outlineColorHex) {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+            <style>
+                body {
+                    background-color: $surfaceColorHex;
+                    color: $onBackgroundHex;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    margin: 0;
+                    padding: 8px 4px 4px 4px;
+                    direction: rtl;
+                    overflow: hidden;
+                    user-select: none;
+                }
+                .chart-container {
+                    width: 100%;
+                    height: 125px;
+                    position: relative;
+                }
+                svg {
+                    width: 100%;
+                    height: 100%;
+                }
+                .recharts-grid-line {
+                    stroke: $outlineColorHex;
+                    stroke-opacity: 0.15;
+                    stroke-dasharray: 3 3;
+                }
+                .recharts-bar {
+                    fill: url(#barGradient);
+                    rx: 4px;
+                    ry: 4px;
+                    transition: fill-opacity 0.2s;
+                }
+                .recharts-bar-empty {
+                    fill: $outlineColorHex;
+                    fill-opacity: 0.08;
+                    rx: 4px;
+                    ry: 4px;
+                }
+                .axis-text {
+                    font-size: 9px;
+                    fill: $onBackgroundHex;
+                    opacity: 0.65;
+                }
+                .tooltip {
+                    position: absolute;
+                    background: $surfaceColorHex;
+                    color: $onBackgroundHex;
+                    border: 1px solid $outlineColorHex;
+                    border-radius: 8px;
+                    padding: 8px;
+                    font-size: 11px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    pointer-events: none;
+                    opacity: 0;
+                    transition: opacity 0.2s;
+                    z-index: 100;
+                    direction: rtl;
+                    text-align: right;
+                }
+                .tooltip-title {
+                    font-weight: bold;
+                    font-size: 11px;
+                    margin-bottom: 4px;
+                    color: $primaryColorHex;
+                }
+                .tooltip-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                    margin-top: 2px;
+                }
+                .tooltip-dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: $primaryColorHex;
+                    display: inline-block;
+                    margin-left: 6px;
+                }
+                .legend {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-size: 10px;
+                    opacity: 0.8;
+                    padding: 0 4px 6px 4px;
+                    border-bottom: 1px dashed $outlineColorHex;
+                    margin-bottom: 4px;
+                }
+                .legend-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .legend-dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="legend">
+                <div class="legend-item">
+                    <span class="legend-dot" style="background: $primaryColorHex;"></span>
+                    <span>📈 مؤشر الالتزام الأسبوعي (RechartsStyle)</span>
+                </div>
+                <div style="font-size: 9px; opacity: 0.7;">⏰ اضغط لمعاينة التفاصيل والتوقيت</div>
+            </div>
+            
+            <div class="chart-container">
+                <svg id="recharts-svg" viewBox="0 0 350 120" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="$primaryColorHex" />
+                            <stop offset="100%" stop-color="$primaryColorHex" stop-opacity="0.4" />
+                        </linearGradient>
+                    </defs>
+                    
+                    <!-- Content Grid lines -->
+                    <line x1="25" y1="20" x2="340" y2="20" class="recharts-grid-line" />
+                    <line x1="25" y1="50" x2="340" y2="50" class="recharts-grid-line" />
+                    <line x1="25" y1="80" x2="340" y2="80" class="recharts-grid-line" />
+                    <line x1="25" y1="100" x2="340" y2="100" class="recharts-grid-line" />
+                    
+                    <line x1="25" y1="100" x2="340" y2="100" stroke="$outlineColorHex" stroke-opacity="0.3" stroke-width="1" />
+                    
+                    <!-- Labels -->
+                    <text x="18" y="23" text-anchor="end" class="axis-text">100%</text>
+                    <text x="18" y="53" text-anchor="end" class="axis-text">50%</text>
+                    <text x="18" y="83" text-anchor="end" class="axis-text">20%</text>
+                    <text x="18" y="103" text-anchor="end" class="axis-text">0%</text>
+                    
+                    <g id="bars-group"></g>
+                    <g id="labels-group"></g>
+                </svg>
+                <div id="recharts-tooltip" class="tooltip"></div>
+            </div>
+
+            <script>
+                const data = $dataJson;
+                const svg = document.getElementById('recharts-svg');
+                const barsGroup = document.getElementById('bars-group');
+                const labelsGroup = document.getElementById('labels-group');
+                const tooltip = document.getElementById('recharts-tooltip');
+                
+                const paddingLeft = 28;
+                const paddingRight = 10;
+                const chartWidth = 350 - paddingLeft - paddingRight;
+                const chartHeight = 80;
+                const barWidth = 22;
+                const colWidth = chartWidth / data.length;
+                
+                data.forEach((d, i) => {
+                    const x = paddingLeft + (i * colWidth) + (colWidth - barWidth) / 2;
+                    const completionRate = d.total > 0 ? (d.completed / d.total) : 0;
+                    
+                    // Column background (empty slot)
+                    const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    bgRect.setAttribute('x', x);
+                    bgRect.setAttribute('y', 20);
+                    bgRect.setAttribute('width', barWidth);
+                    bgRect.setAttribute('height', chartHeight);
+                    bgRect.setAttribute('class', 'recharts-bar-empty');
+                    barsGroup.appendChild(bgRect);
+                    
+                    // Actual achievement bar
+                    const barHeight = chartHeight * completionRate;
+                    const y = 100 - barHeight;
+                    
+                    if (completionRate > 0) {
+                        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                        rect.setAttribute('x', x);
+                        rect.setAttribute('y', y);
+                        rect.setAttribute('width', barWidth);
+                        rect.setAttribute('height', barHeight);
+                        rect.setAttribute('class', 'recharts-bar');
+                        rect.setAttribute('rx', 4);
+                        rect.setAttribute('ry', 4);
+                        
+                        const showTooltip = (event) => {
+                            event.stopPropagation();
+                            const ratePct = Math.round(completionRate * 100);
+                            tooltip.innerHTML = 
+                                '<div class="tooltip-title">' + d.dayLabel + ' (' + d.date + ')</div>' +
+                                '<div class="tooltip-row">' +
+                                    '<span><span class="tooltip-dot"></span>معدل الإنجاز</span>' +
+                                    '<strong>' + d.completed + ' من ' + d.total + ' (' + ratePct + '%)</strong>' +
+                                '</div>' +
+                                '<div class="tooltip-row">' +
+                                    '<span>⏰ أحدث التزام</span>' +
+                                    '<strong>' + d.latestTime + '</strong>' +
+                                '</div>';
+                            tooltip.style.opacity = '1';
+                            const rectContainer = svg.getBoundingClientRect();
+                            const tooltipRect = tooltip.getBoundingClientRect();
+                            let left = event.clientX - rectContainer.left - (tooltipRect.width / 2);
+                            let top = event.clientY - rectContainer.top - tooltipRect.height - 10;
+                            if (left < 0) left = 4;
+                            if (left + tooltipRect.width > rectContainer.width) left = rectContainer.width - tooltipRect.width - 4;
+                            if (top < 0) top = event.clientY - rectContainer.top + 15;
+                            tooltip.style.left = left + 'px';
+                            tooltip.style.top = top + 'px';
+                        };
+                        rect.addEventListener('touchstart', showTooltip);
+                        rect.addEventListener('click', showTooltip);
+                        barsGroup.appendChild(rect);
+                    }
+                    
+                    const showBgTooltip = (event) => {
+                        event.stopPropagation();
+                        const ratePct = Math.round(completionRate * 100);
+                        tooltip.innerHTML = 
+                            '<div class="tooltip-title">' + d.dayLabel + ' (' + d.date + ')</div>' +
+                            '<div class="tooltip-row">' +
+                                '<span>🌿 مستوى التزامك</span>' +
+                                '<strong>' + d.completed + ' من ' + d.total + ' (' + ratePct + '%)</strong>' +
+                            '</div>' +
+                            (d.completed > 0 ? (
+                            '<div class="tooltip-row">' +
+                                '<span>⏰ أحدث التزام</span>' +
+                                '<strong>' + d.latestTime + '</strong>' +
+                            '</div>') : '');
+                        tooltip.style.opacity = '1';
+                        const rectContainer = svg.getBoundingClientRect();
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        let left = event.clientX - rectContainer.left - (tooltipRect.width / 2);
+                        let top = event.clientY - rectContainer.top - tooltipRect.height - 10;
+                        if (left < 0) left = 4;
+                        if (left + tooltipRect.width > rectContainer.width) left = rectContainer.width - tooltipRect.width - 4;
+                        if (top < 0) top = event.clientY - rectContainer.top + 15;
+                        tooltip.style.left = left + 'px';
+                        tooltip.style.top = top + 'px';
+                    };
+                    bgRect.addEventListener('touchstart', showBgTooltip);
+                    bgRect.addEventListener('click', showBgTooltip);
+                    
+                    // Day text
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', x + (barWidth / 2));
+                    text.setAttribute('y', 113);
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('class', 'axis-text');
+                    text.textContent = d.dayLabel;
+                    labelsGroup.appendChild(text);
+                });
+                
+                document.body.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('recharts-bar') && !e.target.classList.contains('recharts-bar-empty')) {
+                        tooltip.style.opacity = '0';
+                    }
+                }, true);
+                document.body.addEventListener('touchstart', (e) => {
+                    if (!e.target.classList.contains('recharts-bar') && !e.target.classList.contains('recharts-bar-empty')) {
+                        tooltip.style.opacity = '0';
+                    }
+                }, true);
+            </script>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(160.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
+        factory = { ctx ->
+            WebView(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
+                webViewClient = WebViewClient()
+                loadDataWithBaseURL("https://recharts.org/", htmlTemplate, "text/html", "UTF-8", null)
+            }
+        },
+        update = { webView ->
+            webView.loadDataWithBaseURL("https://recharts.org/", htmlTemplate, "text/html", "UTF-8", null)
+        }
+    )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -5029,7 +5738,12 @@ fun FiqhQuestionsScreen() {
 // 6. FOCUS ACTIVE OVERLAY (ستار واجهة التركيز غير مشتت)
 // ==========================================
 @Composable
-fun FocusActiveOverlay(remainingSeconds: Int, onCancel: () -> Unit) {
+fun FocusActiveOverlay(
+    remainingSeconds: Int,
+    tasks: List<com.example.data.Task>,
+    onToggleTask: (com.example.data.Task) -> Unit,
+    onCancel: () -> Unit
+) {
     val infiniteTransition = rememberInfiniteTransition()
     val pulse by infiniteTransition.animateFloat(
         initialValue = 0.85f,
@@ -5050,59 +5764,151 @@ fun FocusActiveOverlay(remainingSeconds: Int, onCancel: () -> Unit) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
         ) {
             // Pulse flower element
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(150.dp)
+                    .size(120.dp)
                     .scale(pulse)
                     .border(2.dp, Color(0xFF4CAF50), CircleShape)
-                    .padding(16.dp)
+                    .padding(12.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.AllInclusive,
                     contentDescription = "تركيز كامل",
                     tint = Color(0xFF4CAF50),
-                    modifier = Modifier.size(64.dp)
+                    modifier = Modifier.size(54.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "جلسة التركيز العميق نشطة 🧘",
-                fontSize = 24.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "حياتك أثمن من أن تضيع في التصفح اللاواعي للمشتتات. تم قفل التنبيهات والتطبيقات المزعجة لحمايتك.",
-                fontSize = 14.sp,
+                text = "حياتك أثمن من أن تضيع في التصفح المشتت. تم قفل التنبيهات المزعجة لحمايتك.",
+                fontSize = 12.sp,
                 color = Color.LightGray.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
-                lineHeight = 22.sp,
+                lineHeight = 18.sp,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Timer display
             val mins = remainingSeconds / 60
             val secs = remainingSeconds % 60
             Text(
                 text = String.format(Locale.US, "%02d:%02d", mins, secs),
-                fontSize = 48.sp,
+                fontSize = 44.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Color(0xFFFFD54F) // Glorious Gold timer text
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- WIDGET CHECKLIST ON THE CHRONOMETER SCREEN ---
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .padding(horizontal = 4.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF1E291F).copy(alpha = 0.6f)
+                ),
+                border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.25f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "📋 قائمة التركيز والتنفيذ",
+                        color = Color(0xFF34D399),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    )
+
+                    val activeTasks = tasks.filter { !it.isCompleted }
+                    if (activeTasks.isEmpty()) {
+                        Text(
+                            text = "لا توجد مهام نشطة حالياً! أحسنت صنعاً في إنجاز أعمالك 🌿",
+                            color = Color.LightGray.copy(alpha = 0.7f),
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        activeTasks.take(4).forEach { task ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onToggleTask(task) }
+                                    .background(Color.White.copy(alpha = 0.04f))
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "⬜",
+                                    fontSize = 15.sp,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.End
+                                ) {
+                                    Text(
+                                        text = task.title,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Right,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "المجال: " + task.category,
+                                        color = Color.LightGray.copy(alpha = 0.6f),
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.Right
+                                    )
+                                }
+                            }
+                        }
+                        
+                        if (activeTasks.size > 4) {
+                            Text(
+                                text = "+ ${activeTasks.size - 4} مهام متبقية",
+                                color = Color.LightGray.copy(alpha = 0.5f),
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             TextButton(
                 onClick = onCancel,
@@ -5111,7 +5917,7 @@ fun FocusActiveOverlay(remainingSeconds: Int, onCancel: () -> Unit) {
                 Text(
                     text = "إنهاء مبكر (غير منصوح به)",
                     color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -5219,8 +6025,9 @@ fun AddTaskDialog(onDismiss: () -> Unit, onConfirm: (String, String, String, Boo
 }
 
 @Composable
-fun AddHabitDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+fun AddHabitDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
+    var targetTime by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -5231,7 +6038,7 @@ fun AddHabitDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(text = "إنشاء عادة جديدة", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(text = "إنشاء عادة جديدة 🌱", fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
                 OutlinedTextField(
                     value = name,
@@ -5239,6 +6046,18 @@ fun AddHabitDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                     label = { Text("اسم العادة (مثال: الاستغفار 100 مرة)") },
                     modifier = Modifier.fillMaxWidth().testTag("habit_name_input"),
                     shape = RoundedCornerShape(12.dp)
+                )
+
+                OutlinedTextField(
+                    value = targetTime,
+                    onValueChange = { targetTime = it },
+                    label = { Text("توقيت العادة (مثال: 07:30 ص أو بعد العصر)") },
+                    placeholder = { Text("اختياري - لمساعدتك في التنبيه والالتزام") },
+                    modifier = Modifier.fillMaxWidth().testTag("habit_time_input"),
+                    shape = RoundedCornerShape(12.dp),
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Schedule, contentDescription = "توقيت")
+                    }
                 )
 
                 Row(
@@ -5250,7 +6069,7 @@ fun AddHabitDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { if (name.isNotEmpty()) onConfirm(name) },
+                        onClick = { if (name.isNotEmpty()) onConfirm(name, targetTime) },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.testTag("confirm_add_habit")
                     ) {

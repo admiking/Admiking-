@@ -65,7 +65,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 try {
                     val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
                     val currentCity = prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة"
-                    val cities = listOf("مكة المكرمة", "المدينة المنورة", "القاهرة", "الرياض", "الرباط", "الدار البيضاء", "تونس", "الجزائر")
+                    val cities = com.example.util.PrayerTimesHelper.cities
                     val currentIndex = cities.indexOf(currentCity)
                     val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % cities.size
                     val nextCity = cities[nextIndex]

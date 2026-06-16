@@ -621,9 +621,12 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- Habit Actions ---
-    fun addHabit(name: String) {
+    fun addHabit(name: String, targetTime: String? = null) {
         viewModelScope.launch {
-            repository.insertHabit(Habit(name = name))
+            val habitId = repository.insertHabit(Habit(name = name))
+            if (!targetTime.isNullOrBlank()) {
+                prefs.edit().putString("HabitTargetTime_$habitId", targetTime).apply()
+            }
             val currentMonthStr = SimpleDateFormat("yyyy-MM", Locale.US).format(Date())
             prefs.edit().putString("LastHabitAddedMonthYear", currentMonthStr).apply()
             updateMonthlyHabitAlertState()
@@ -633,6 +636,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteHabit(habitId: Int) {
         viewModelScope.launch {
             repository.deleteHabit(habitId)
+            prefs.edit().remove("HabitTargetTime_$habitId").apply()
         }
     }
 
@@ -641,7 +645,21 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             val date = currentDate.value
             val isCompleted = todayHabitLogs.value.none { it.habitId == habit.id }
             repository.toggleHabitCompletion(habit, date, isCompleted)
+            if (isCompleted) {
+                val completionTime = SimpleDateFormat("HH:mm", Locale.US).format(Date())
+                prefs.edit().putString("HabitCompletionTime_${habit.id}_$date", completionTime).apply()
+            } else {
+                prefs.edit().remove("HabitCompletionTime_${habit.id}_$date").apply()
+            }
         }
+    }
+
+    fun getHabitTargetTime(habitId: Int): String? {
+        return prefs.getString("HabitTargetTime_$habitId", null)
+    }
+
+    fun getHabitCompletionTime(habitId: Int, date: String): String? {
+        return prefs.getString("HabitCompletionTime_${habitId}_$date", null)
     }
 
     // --- City Configuration ---
