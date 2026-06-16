@@ -2328,6 +2328,10 @@ fun FocusScreen(viewModel: HayatyViewModel) {
     val usageRecords by viewModel.usageRecords.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var blockDurationMinutes by remember { mutableStateOf(25f) }
+    
+    // State of the selected app in the interactive analysis panel
+    var selectedAppRecord by remember { mutableStateOf<com.example.data.AppUsageRecord?>(null) }
+    var userReflectionAnswer by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -2345,35 +2349,42 @@ fun FocusScreen(viewModel: HayatyViewModel) {
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "تحكم في استخدامك للهاتف وركز على يومك بكل وعي.",
+                text = "تحكم في استخدامك للهاتف وركز على يومك بكل وعي واحترف مكافحة التشتت.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
         }
 
-        // --- SCREEN TIME GRAPH ---
+        // --- SCREEN TIME GRAPH & INTERACTIVE ANALYSIS ---
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("screen_usage_card"),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
+                    val totalMinutes = usageRecords.sumOf { it.durationMs } / 60000
+                    
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val totalMinutes = usageRecords.sumOf { it.durationMs } / 60000
                         Column {
-                            Text(text = "مجموع استخدام الهاتف اليوم", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(text = "${totalMinutes / 60} ساعة و ${totalMinutes % 60} دقيقة", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(text = "مجموع استخدام الهاتف اليوم", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = "${totalMinutes / 60} ساعة و ${totalMinutes % 60} دقيقة",
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
+                        
                         Button(
                             onClick = { 
-                                // Open system usage access settings
                                 try {
                                     val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
                                     context.startActivity(intent)
@@ -2381,55 +2392,322 @@ fun FocusScreen(viewModel: HayatyViewModel) {
                                     viewModel.refreshUsageStats(context)
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("أذونات النظام", fontSize = 12.sp)
+                            Text("أذونات النظام", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "توزيع التشتت لكل تطبيق ومستوى الإفراط:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    
+                    // --- DISTRACTION LEVEL SHIELD DIAL ---
+                    val distractionLevel = when {
+                        totalMinutes > 150 -> "مشتت بشدة 🚨"
+                        totalMinutes > 60 -> "تشتت معتدل ⚠️"
+                        else -> "تركيز ممتاز وصحي ❇️"
+                    }
+                    val dialColor = when {
+                        totalMinutes > 150 -> Color(0xFFE53935)
+                        totalMinutes > 60 -> Color(0xFFF57C00)
+                        else -> Color(0xFF2E7D32)
+                    }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Bar Chart via standard Compose Canvas Custom Draw
-                    usageRecords.take(5).forEach { record ->
-                        val mins = record.durationMs / 60000
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(dialColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                            .border(0.5.dp, dialColor.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = record.appName,
-                                fontSize = 12.sp,
-                                modifier = Modifier.width(80.dp),
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 1
+                                text = "مؤشر جودة التركيز الإجمالي:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            // Bar container
-                            Box(
+                            Text(
+                                text = distractionLevel,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = dialColor
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "📱 انقر على أي تطبيق لتحليله وتلقي نصائح ذكية:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Bar Chart - Interactive App Selection Row
+                    if (usageRecords.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "يرجى منح أذونات النظام لاسترداد سجلات الاستخدام أو توليد عينة.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    } else {
+                        usageRecords.take(6).forEach { record ->
+                            val mins = record.durationMs / 60000
+                            val isSelected = selectedAppRecord?.packageName == record.packageName
+                            
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(16.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        selectedAppRecord = record
+                                        userReflectionAnswer = null // reset reflection
+                                    }
+                                    .padding(vertical = 6.dp, horizontal = 8.dp)
                             ) {
-                                val fractionalWidth = minOf(1f, mins.toFloat() / 150f)
+                                Text(
+                                    text = record.appName,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.width(90.dp),
+                                    overflow = TextOverflow.Ellipsis,
+                                    maxLines = 1
+                                )
+                                
+                                Spacer(modifier = Modifier.width(6.dp))
+                                
+                                // Bar container
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxHeight()
-                                        .fillMaxWidth(fractionalWidth)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (mins > 60) Color(0xFFE53935) else MaterialTheme.colorScheme.primary
-                                        )
+                                        .weight(1f)
+                                        .height(12.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                                ) {
+                                    val fractionalWidth = minOf(1f, mins.toFloat() / 120f)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxHeight()
+                                            .fillMaxWidth(fractionalWidth)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(
+                                                if (mins > 45) Color(0xFFE53935) else MaterialTheme.colorScheme.primary
+                                            )
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.width(10.dp))
+                                
+                                Text(
+                                    text = "$mins د",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(text = "$mins د", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- INTERACTIVE SMART ADVICE PANEL FOR THE SELECTED APP ---
+        if (selectedAppRecord != null) {
+            val record = selectedAppRecord!!
+            val minsUsed = record.durationMs / 60000
+            
+            // Generate tailored dynamic advices
+            val isSocialOrMedia = record.appName.contains("انستقرام", true) || 
+                                  record.appName.contains("فيسبوك", true) || 
+                                  record.appName.contains("تيك", true) || 
+                                  record.appName.contains("سناب", true) || 
+                                  record.appName.contains("تويتر", true) || 
+                                  record.appName.contains("يوتيوب", true) || 
+                                  record.packageName.contains("instagram", true) || 
+                                  record.packageName.contains("facebook", true) || 
+                                  record.packageName.contains("tiktok", true) || 
+                                  record.packageName.contains("twitter", true) || 
+                                  record.packageName.contains("youtube", true) || 
+                                  record.packageName.contains("snapchat", true)
+
+            val appCategory = if (isSocialOrMedia) "وسائل التواصل والتسلية 🎭" else "أدوات وتطبيقات عامة ⚙️"
+            
+            val appRisk = when {
+                minsUsed > 60 -> "خطر تشتت حرج 🚨"
+                minsUsed > 25 -> "تأهب وقلق تشتت متوسط ⚠️"
+                else -> "تصفح معتدل وآمن ❇️"
+            }
+            
+            val riskColor = when {
+                minsUsed > 60 -> Color(0xFFE53935)
+                minsUsed > 25 -> Color(0xFFF57C00)
+                else -> Color(0xFF2E7D32)
+            }
+
+            val adviceText = if (isSocialOrMedia) {
+                when {
+                    minsUsed > 60 -> "أنت تهدر وقتاً ثميناً هنا! هذا التطبيق يستهلك انتباهك ونفسيتك بلذة مؤقتة وهمية. ننصحك بنقل التطبيق لمجلد مخفي، وحظر الهاتف بنمط التركيز لـ 25 دقيقة فوراً لاسترداد توازنك العقلي."
+                    minsUsed > 25 -> "الاستخدام يقترب من حاجز الخطر. خذ استراحة كسر تشتت، وقم بإنجاز ورد تلاوة من المصحف أو أذكار الصباح/المساء لإرساء السكينة مجدداً."
+                    else -> "استخدام رائع وواعٍ لهاتفك. واصل التحكم ولا تستسلم لدوامة الم scrolling اللانهائي المتعب."
+                }
+            } else {
+                when {
+                    minsUsed > 60 -> "بالرغم من كونه تطبيقاً عاماً، إلا أن المكوث الطويل يمنحك وهماً بالإنتاجية. قم بتقسيم عملك وبدء فترات تركيز حازمة."
+                    else -> "استخدام طبيعي ومتزن ولا غبار عليه. أنت تقود هاتفك ولا يقتادك هو."
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().testTag("app_analysis_detail"),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)),
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📊 مجهر التحليل: ${record.appName}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            IconButton(onClick = { selectedAppRecord = null }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "إغلاق التفاصيل",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), thickness = 0.5.dp)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("نوع التطبيق: $appCategory", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = appRisk,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = riskColor
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Text(
+                            text = "💡 نصيحة التحرر من التشتت:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = adviceText,
+                            fontSize = 12.sp,
+                            lineHeight = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Right,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), thickness = 0.5.dp)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // --- INTERACTIVE REFLECTION POLL ---
+                        Text(
+                            text = "❓ تفاعل وقيّم استخدامك النفسي للـ $minsUsed دقيقة الأخيرة:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = { userReflectionAnswer = "productive" },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (userReflectionAnswer == "productive") Color(0xFF2E7D32) else MaterialTheme.colorScheme.surface,
+                                    contentColor = if (userReflectionAnswer == "productive") Color.White else MaterialTheme.colorScheme.onSurface
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                Text("كان مثمراً ونبيلاً ❇️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = { userReflectionAnswer = "unproductive" },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (userReflectionAnswer == "unproductive") Color(0xFFE53935) else MaterialTheme.colorScheme.surface,
+                                    contentColor = if (userReflectionAnswer == "unproductive") Color.White else MaterialTheme.colorScheme.onSurface
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                Text("كان تشتتاً وهدراً 🛡️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (userReflectionAnswer != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val responseText = if (userReflectionAnswer == "productive") {
+                                "رائع جداً! بارك الله في همّتك وجعل علمك نافعاً. استمر في البناء الصالح وحافظ على الاتزان لئلا تزل القدم."
+                            } else {
+                                "الاعتراف بالخطأ أول خطوات الإصلاح! ننصحك فوراً بلجم هذا الهدر وسحب طاقتك لتبدأ تفعيل مؤقت التركيز في الأسفل."
+                            }
+                            Text(
+                                text = responseText,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (userReflectionAnswer == "productive") Color(0xFF2E7D32) else Color(0xFFE53935),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -3937,6 +4215,11 @@ fun AICoachScreen(viewModel: HayatyViewModel) {
 
     var coachSubTab by remember { mutableStateOf(0) } // 0 = Daily Routine, 1 = Future Plan + 10%
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("AzkarPrefs", android.content.Context.MODE_PRIVATE) }
+    var completedMonths by remember { mutableStateOf(prefs.getStringSet("CompletedMonths", emptySet()) ?: emptySet()) }
+    var selectedMonthIndex by remember { mutableStateOf(0) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -4134,87 +4417,256 @@ fun AICoachScreen(viewModel: HayatyViewModel) {
                 }
 
                 item {
-                    // Month by month projection grid
+                    // --- INTERACTIVE PROGRESS BAR DIAGRAM / CHART ---
+                    val m1 = futureQuranBaseline
+                    val m2 = Math.round(futureQuranBaseline * 1.1).toInt().coerceAtLeast(m1 + 1)
+                    val m3 = Math.round(m2 * 1.1).toInt().coerceAtLeast(m2 + 1)
+                    val m4 = Math.round(m3 * 1.1).toInt().coerceAtLeast(m3 + 1)
+                    val m5 = Math.round(m4 * 1.1).toInt().coerceAtLeast(m4 + 1)
+                    val m6 = Math.round(m5 * 1.1).toInt().coerceAtLeast(m5 + 1)
+
+                    val monthsValues = listOf(m1, m2, m3, m4, m5, m6)
+                    val monthsFullLabels = listOf(
+                        "الشهر الأول (الأساس)",
+                        "الشهر الثاني (+10% نمو)",
+                        "الشهر الثالث (+10% نمو)",
+                        "الشهر الرابع (+10% نمو)",
+                        "الشهر الخامس (+10% نمو)",
+                        "الشهر السادس (+10% متميز)"
+                    )
+
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Column(modifier = Modifier.padding(18.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("📅", fontSize = 20.sp)
-                                Spacer(modifier = Modifier.width(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("📊", fontSize = 18.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "مخطط صعود الورد وتكامل العادات 📈",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                
                                 Text(
-                                    text = "جدول التقويم والورد الرقمي المتوقع (+10% شهرياً):",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    text = "تفاعلي (انقر على الأعمدة) 👆",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Spacer(modifier = Modifier.height(18.dp))
 
-                            val m1 = futureQuranBaseline
-                            val m2 = Math.round(futureQuranBaseline * 1.1).toInt().coerceAtLeast(m1 + 1)
-                            val m3 = Math.round(m2 * 1.1).toInt().coerceAtLeast(m2 + 1)
-                            val m4 = Math.round(m3 * 1.1).toInt().coerceAtLeast(m3 + 1)
-                            val m5 = Math.round(m4 * 1.1).toInt().coerceAtLeast(m4 + 1)
-                            val m6 = Math.round(m5 * 1.1).toInt().coerceAtLeast(m5 + 1)
+                            // Interactive Bar Chart
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(130.dp)
+                                    .padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                monthsValues.forEachIndexed { index, value ->
+                                    val isSelected = selectedMonthIndex == index
+                                    val isCompleted = completedMonths.contains(index.toString())
+                                    
+                                    // Scale height proportionally
+                                    val maxHeight = 90.dp
+                                    val barHeight = ((value.toFloat() / m6.toFloat()) * maxHeight.value).dp.coerceAtLeast(30.dp)
 
-                            val months = listOf(
-                                "الشهر الأول (الأساس)" to m1,
-                                "الشهر الثاني (+10%)" to m2,
-                                "الشهر الثالث (+10%)" to m3,
-                                "الشهر الرابع (+10%)" to m4,
-                                "الشهر الخامس (+10%)" to m5,
-                                "الشهر السادس (+10%)" to m6
-                            )
-
-                            months.forEachIndexed { index, pair ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { selectedMonthIndex = index }
+                                            .padding(horizontal = 4.dp)
+                                    ) {
+                                        // Bar view
                                         Box(
                                             modifier = Modifier
-                                                .size(28.dp)
+                                                .fillMaxWidth()
+                                                .height(barHeight)
                                                 .background(
-                                                    if (index == 0) MaterialTheme.colorScheme.secondaryContainer
-                                                    else MaterialTheme.colorScheme.primaryContainer,
-                                                    CircleShape
+                                                    color = when {
+                                                        isSelected -> MaterialTheme.colorScheme.primary
+                                                        isCompleted -> Color(0xFF2E7D32)
+                                                        else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                                    },
+                                                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+                                                )
+                                                .border(
+                                                    width = if (isSelected) 2.dp else 0.dp,
+                                                    color = if (isSelected) Color(0xFFD4AF37) else Color.Transparent,
+                                                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
                                                 ),
-                                            contentAlignment = Alignment.Center
+                                            contentAlignment = Alignment.BottomCenter
                                         ) {
-                                            Text(
-                                                text = "${index + 1}",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (index == 0) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.SpaceBetween,
+                                                modifier = Modifier.fillMaxSize().padding(vertical = 4.dp)
+                                            ) {
+                                                // Value indicator inside or above
+                                                Text(
+                                                    text = "$value",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                
+                                                if (isCompleted) {
+                                                    Text("✔️", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface)
+                                                } else {
+                                                    Spacer(modifier = Modifier.height(1.dp))
+                                                }
+                                            }
                                         }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Text(text = pair.first, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        
+                                        // Label below bar
                                         Text(
-                                            text = "${pair.second} صفحات يومياً",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (index == 5) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface
+                                            text = "ش${index + 1}",
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                                         )
-                                        if (index == 5) {
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("👑", fontSize = 14.sp)
-                                        }
                                     }
                                 }
-                                if (index < months.size - 1) {
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
+                            
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Details of the clicked/selected month
+                            val label = monthsFullLabels[selectedMonthIndex]
+                            val pages = monthsValues[selectedMonthIndex]
+                            val isCompleted = completedMonths.contains(selectedMonthIndex.toString())
+                            
+                            val tip = when(selectedMonthIndex) {
+                                0 -> "ابدأ بتهيئة ذهنك وربط الورد بصلاتين رئيسيتين كصلاتي الفجر والعشاء لتثبيت العادة بنسبة ديمومة عالية."
+                                1 -> "الزيادة يسيرة جداً، ركّبها على الصلوات الباقية بإضافة صفحة واحدة دبر صلاة العصر لكي لا تشعر بأي ثقل."
+                                2 -> "استخدم طريقة قراءة البكور (ما قبل شروق الشمس). الهدوء والسكينة تضاعف سرعة حفظك وتدبرك."
+                                3 -> "قم بتجزئة الورد إلى نصفين: نصف بعد الفجر ونصف قبل النوم لتسهيل قراءة هذا المقدار المتنامي."
+                                4 -> "لقد اقتربت من خط نهاية النصف الأول من الخطة بنجاح. ركّز الآن على ترطيب لسانك بالتدبر أثناء القراءة."
+                                else -> "وصلت لقمة التميز والتلاوة الذهبية! أنت الآن تقرأ بزيادة تبلغ 60% مقارنة بالأساس دون أدنى تعب بفضل التدرج الرائع!"
+                            }
+
+                            val challenge = when(selectedMonthIndex) {
+                                0 -> "التلاوة لمدة 7 أيام متتالية دون انقطاع لتأسيس الروتين."
+                                1 -> "قراءة الورد اليومي بصوت مسموع خاشع ومحبر."
+                                2 -> "تدوين آية واحدة استوقفتك يومياً لفهم معانيها العميقة."
+                                3 -> "الاستماع لتلاوة شيخ متقن لنفس صفحات الورد لتصحيح النطق."
+                                4 -> "شرح أسباب نزول آية واحدة لأحد أفراد عائلتك لنشر علم القرآن."
+                                else -> "التلاوة المتصلة لكامل الورد اليومي دون تفريق لتعزيز المهارة وصقل الحفظ."
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+                                    .padding(14.dp)
+                            ) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "$label 🎯",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        
+                                        Text(
+                                            text = "$pages صفحات / يوم",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    
+                                    Text(
+                                        text = "💡 نصيحة التطوير والارتقاء:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = tip,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Right,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    
+                                    Text(
+                                        text = "🏆 تحدّي هذا الشهر:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                    Text(
+                                        text = challenge,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Right,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    
+                                    // Interactive toggle complete button
+                                    Button(
+                                        onClick = {
+                                            val currentSet = prefs.getStringSet("CompletedMonths", emptySet()) ?: emptySet()
+                                            val updated = if (currentSet.contains(selectedMonthIndex.toString())) {
+                                                currentSet - selectedMonthIndex.toString()
+                                            } else {
+                                                currentSet + selectedMonthIndex.toString()
+                                            }
+                                            prefs.edit().putStringSet("CompletedMonths", updated).apply()
+                                            completedMonths = updated
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isCompleted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 12.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.Star,
+                                            contentDescription = "شارة الإنجاز",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isCompleted) "لقد أنجزت هذا الشهر بنجاح! 🎉" else "ضع علامة منجز لهذا الشهر 🏆",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }

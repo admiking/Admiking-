@@ -40,8 +40,9 @@ class HayatyWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE || 
-            intent.action == "com.example.widget.UPDATE_WIDGET_DATA") {
+        val action = intent.action
+        if (action == AppWidgetManager.ACTION_APPWIDGET_UPDATE || 
+            action == "com.example.widget.UPDATE_WIDGET_DATA") {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = ComponentName(context, HayatyWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
@@ -49,6 +50,51 @@ class HayatyWidgetProvider : AppWidgetProvider() {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
+                    for (appWidgetId in appWidgetIds) {
+                        updateAppWidget(context, appWidgetManager, appWidgetId)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+        } else if (action == "com.example.widget.TOGGLE_CITY") {
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
+                    val currentCity = prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة"
+                    val cities = listOf("مكة المكرمة", "المدينة المنورة", "القاهرة", "الرياض", "الرباط", "الدار البيضاء", "تونس", "الجزائر")
+                    val currentIndex = cities.indexOf(currentCity)
+                    val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % cities.size
+                    val nextCity = cities[nextIndex]
+                    
+                    prefs.edit().putString("SelectedCity", nextCity).commit()
+                    
+                    val appWidgetManager = AppWidgetManager.getInstance(context)
+                    val componentName = ComponentName(context, HayatyWidgetProvider::class.java)
+                    val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+                    for (appWidgetId in appWidgetIds) {
+                        updateAppWidget(context, appWidgetManager, appWidgetId)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+        } else if (action == "com.example.widget.INCREMENT_TASBIH") {
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
+                    val currentCount = prefs.getInt("WidgetTasbihCount", 0)
+                    prefs.edit().putInt("WidgetTasbihCount", currentCount + 1).commit()
+                    
+                    val appWidgetManager = AppWidgetManager.getInstance(context)
+                    val componentName = ComponentName(context, HayatyWidgetProvider::class.java)
+                    val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
                     for (appWidgetId in appWidgetIds) {
                         updateAppWidget(context, appWidgetManager, appWidgetId)
                     }
@@ -78,6 +124,7 @@ private suspend fun updateAppWidget(
 ) {
     val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
     val city = prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة"
+    val widgetTasbihCount = prefs.getInt("WidgetTasbihCount", 0)
 
     // 1. Calculate next prayer
     val nextPrayer = getNextPrayerTime(city)
@@ -93,6 +140,10 @@ private suspend fun updateAppWidget(
     views.setTextViewText(R.id.widget_prayer_name, nextPrayer.first)
     views.setTextViewText(R.id.widget_prayer_time, nextPrayer.second)
 
+    // Format Tasbih count to Arabic digits
+    val arabicTasbih = toArabicDigits(widgetTasbihCount)
+    views.setTextViewText(R.id.widget_tasbih_text, "📿 تسبيح سريع: $arabicTasbih (اضغط للزيادة)")
+
     if (nearestTask != null) {
         views.setTextViewText(R.id.widget_task_title, nearestTask.title)
         views.setTextViewText(R.id.widget_task_sub, "المجموعة: ${nearestTask.category}")
@@ -101,7 +152,7 @@ private suspend fun updateAppWidget(
         views.setTextViewText(R.id.widget_task_sub, "يومك مبارك وسعيد!")
     }
 
-    // click pending intent to launch main activity
+    // click pending intent to launch main activity on widget root
     val intent = Intent(context, com.example.MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
@@ -113,7 +164,36 @@ private suspend fun updateAppWidget(
     )
     views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
 
+    // Interactive city click intent
+    val cityIntent = Intent(context, HayatyWidgetProvider::class.java).apply {
+        action = "com.example.widget.TOGGLE_CITY"
+    }
+    val pendingCity = PendingIntent.getBroadcast(
+        context,
+        110,
+        cityIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+    views.setOnClickPendingIntent(R.id.widget_location, pendingCity)
+
+    // Interactive Tasbih click intent
+    val tasbihIntent = Intent(context, HayatyWidgetProvider::class.java).apply {
+        action = "com.example.widget.INCREMENT_TASBIH"
+    }
+    val pendingTasbih = PendingIntent.getBroadcast(
+        context,
+        120,
+        tasbihIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+    views.setOnClickPendingIntent(R.id.widget_tasbih_row, pendingTasbih)
+
     appWidgetManager.updateAppWidget(appWidgetId, views)
+}
+
+private fun toArabicDigits(number: Int): String {
+    val arabicDigits = charArrayOf('٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩')
+    return number.toString().map { if (it.isDigit()) arabicDigits[it - '0'] else it }.joinToString("")
 }
 
 private fun getNextPrayerTime(city: String): Pair<String, String> {
@@ -125,7 +205,6 @@ private fun getNextPrayerTime(city: String): Pair<String, String> {
 
     var nextPrayer = todayTimes.firstOrNull { it.time > currentTimeStr }
     if (nextPrayer == null) {
-        // next prayer is tomorrow's Fajr
         val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
         val tomorrowTimes = PrayerTimesHelper.getPrayerTimesForCity(city, tomorrow.time)
         val tomorrowFajr = tomorrowTimes.firstOrNull { it.name == "Fajr" } ?: tomorrowTimes.first()
