@@ -11,6 +11,12 @@ import com.example.api.GeminiClient
 import com.example.util.PrayerTime
 import com.example.util.PrayerTimesHelper
 import kotlinx.coroutines.flow.*
+import android.media.MediaPlayer
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -230,12 +236,314 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         _quranPostPrayerStatus.value = updatedMap
     }
 
+    // --- Warsh Quran Audio State ---
+    val reciters = mapOf(
+        "الشيخ محمود خليل الحصري (ورش)" to "https://server14.mp3quran.net/husr/warsh/",
+        "الشيخ ياسين الجزائري (ورش)" to "https://download.quranicaudio.com/quran/yassin_al_jazaery_warsh/",
+        "الشيخ عبد الباسط عبد الصمد (ورش)" to "https://server11.mp3quran.net/basit_warsh/"
+    )
+
+    private val _selectedReciterName = MutableStateFlow(prefs.getString("SelectedWarshReciter", "الشيخ محمود خليل الحصري (ورش)") ?: "الشيخ محمود خليل الحصري (ورش)")
+    val selectedReciterName: StateFlow<String> = _selectedReciterName.asStateFlow()
+
+    fun setSelectedReciter(name: String) {
+        _selectedReciterName.value = name
+        prefs.edit().putString("SelectedWarshReciter", name).apply()
+        refreshDownloadedSuras()
+    }
+
+    private val _downloadedSuras = MutableStateFlow<Map<Int, Boolean>>(emptyMap())
+    val downloadedSuras: StateFlow<Map<Int, Boolean>> = _downloadedSuras.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<Map<Int, Int>>(emptyMap())
+    val downloadProgress: StateFlow<Map<Int, Int>> = _downloadProgress.asStateFlow()
+
+    private val _downloadingJobs = mutableMapOf<Int, kotlinx.coroutines.Job>()
+
+    private var quranMediaPlayer: android.media.MediaPlayer? = null
+    private var progressJob: kotlinx.coroutines.Job? = null
+
+    private val _playingSuraId = MutableStateFlow<Int?>(null)
+    val playingSuraId: StateFlow<Int?> = _playingSuraId.asStateFlow()
+
+    private val _isAudioPlaying = MutableStateFlow(false)
+    val isAudioPlaying: StateFlow<Boolean> = _isAudioPlaying.asStateFlow()
+
+    private val _audioProgress = MutableStateFlow(0f)
+    val audioProgress: StateFlow<Float> = _audioProgress.asStateFlow()
+
+    private val _currentPlayTime = MutableStateFlow("00:00")
+    val currentPlayTime: StateFlow<String> = _currentPlayTime.asStateFlow()
+
+    private val _audioDuration = MutableStateFlow("00:00")
+    val audioDuration: StateFlow<String> = _audioDuration.asStateFlow()
+
+    fun getSuraSaveFile(suraId: Int, reciterName: String): java.io.File {
+        val reciterFolderSafe = reciterName.replace(" ", "_").replace("(", "").replace(")", "")
+        val dir = java.io.File(getApplication<Application>().filesDir, "warsh_quran/$reciterFolderSafe")
+        if (!dir.exists()) dir.mkdirs()
+        return java.io.File(dir, String.format(Locale.US, "%03d.mp3", suraId))
+    }
+
+    fun refreshDownloadedSuras() {
+        val currentReciter = _selectedReciterName.value
+        val map = (1..114).associateWith { id ->
+            getSuraSaveFile(id, currentReciter).exists()
+        }
+        _downloadedSuras.value = map
+    }
+
+    fun downloadSuraAudio(suraId: Int) {
+        if (_downloadProgress.value.containsKey(suraId)) return
+        
+        val reciterName = _selectedReciterName.value
+        val reciterUrlBase = reciters[reciterName] ?: "https://server14.mp3quran.net/husr/warsh/"
+        val fileUrlStr = "$reciterUrlBase${String.format(Locale.US, "%03d.mp3", suraId)}"
+        val destinationFile = getSuraSaveFile(suraId, reciterName)
+
+        val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                _downloadProgress.value = _downloadProgress.value + (suraId to 0)
+                
+                val url = java.net.URL(fileUrlStr)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 8000
+                connection.readTimeout = 12000
+                connection.connect()
+
+                if (connection.responseCode != java.net.HttpURLConnection.HTTP_OK) {
+                    throw java.io.IOException("HTTP code: ${connection.responseCode}")
+                }
+
+                val fileLength = connection.contentLength
+                val input = connection.inputStream
+                val output = java.io.FileOutputStream(destinationFile)
+
+                val data = ByteArray(4096)
+                var total: Long = 0
+                var count: Int
+                while (input.read(data).also { count = it } != -1) {
+                    total += count
+                    if (fileLength > 0) {
+                        val percentage = ((total * 100) / fileLength).toInt()
+                        _downloadProgress.value = _downloadProgress.value + (suraId to percentage)
+                    }
+                    output.write(data, 0, count)
+                }
+
+                output.flush()
+                output.close()
+                input.close()
+                
+                _downloadProgress.value = _downloadProgress.value - suraId
+                refreshDownloadedSuras()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _downloadProgress.value = _downloadProgress.value - suraId
+                if (destinationFile.exists()) {
+                    destinationFile.delete()
+                }
+            } finally {
+                _downloadingJobs.remove(suraId)
+            }
+        }
+        _downloadingJobs[suraId] = job
+    }
+
+    fun deleteSuraAudio(suraId: Int) {
+        val reciterName = _selectedReciterName.value
+        val file = getSuraSaveFile(suraId, reciterName)
+        if (file.exists()) {
+            file.delete()
+        }
+        refreshDownloadedSuras()
+    }
+
+    fun playSuraAudio(suraId: Int) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            try {
+                if (_playingSuraId.value == suraId) {
+                    toggleAudioPlayPause()
+                    return@launch
+                }
+
+                stopAudioPlay()
+
+                val reciterName = _selectedReciterName.value
+                val file = getSuraSaveFile(suraId, reciterName)
+                val mediaPath = if (file.exists()) {
+                    file.absolutePath
+                } else {
+                    val reciterUrlBase = reciters[reciterName] ?: "https://server14.mp3quran.net/husr/warsh/"
+                    "$reciterUrlBase${String.format(Locale.US, "%03d.mp3", suraId)}"
+                }
+
+                val mp = android.media.MediaPlayer().apply {
+                    setDataSource(mediaPath)
+                    prepareAsync()
+                    setOnPreparedListener {
+                        start()
+                        _isAudioPlaying.value = true
+                        _playingSuraId.value = suraId
+                        startProgressUpdates()
+                    }
+                    setOnCompletionListener {
+                        stopAudioPlay()
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        stopAudioPlay()
+                        true
+                    }
+                }
+                quranMediaPlayer = mp
+            } catch (e: Exception) {
+                e.printStackTrace()
+                stopAudioPlay()
+            }
+        }
+    }
+
+    fun toggleAudioPlayPause() {
+        quranMediaPlayer?.let { mp ->
+            if (mp.isPlaying) {
+                mp.pause()
+                _isAudioPlaying.value = false
+            } else {
+                mp.start()
+                _isAudioPlaying.value = true
+                startProgressUpdates()
+            }
+        }
+    }
+
+    fun seekAudioTo(fraction: Float) {
+        quranMediaPlayer?.let { mp ->
+            val duration = mp.duration
+            if (duration > 0) {
+                val dest = (duration * fraction).toInt()
+                mp.seekTo(dest)
+                _audioProgress.value = fraction
+            }
+        }
+    }
+
+    fun stopAudioPlay() {
+        progressJob?.cancel()
+        progressJob = null
+        try {
+            quranMediaPlayer?.stop()
+            quranMediaPlayer?.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        quranMediaPlayer = null
+        _isAudioPlaying.value = false
+        _playingSuraId.value = null
+        _audioProgress.value = 0f
+        _currentPlayTime.value = "00:00"
+        _audioDuration.value = "00:00"
+    }
+
+    private fun startProgressUpdates() {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            while (true) {
+                quranMediaPlayer?.let { mp ->
+                    if (mp.isPlaying) {
+                        val current = mp.currentPosition
+                        val duration = mp.duration
+                        if (duration > 0) {
+                            _audioProgress.value = current.toFloat() / duration.toFloat()
+                            _currentPlayTime.value = formatMs(current)
+                            _audioDuration.value = formatMs(duration)
+                        }
+                    }
+                }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
+    private fun formatMs(ms: Int): String {
+        val totalSeconds = ms / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format(Locale.US, "%02d:%02d", minutes, seconds)
+    }
+
+    // --- Warsh Quran Verses Loader & Cache Engine ---
+    private val _loadedSuraVerses = MutableStateFlow<Map<Int, List<String>>>(emptyMap())
+    val loadedSuraVerses: StateFlow<Map<Int, List<String>>> = _loadedSuraVerses.asStateFlow()
+
+    private val _isLoadingVerses = MutableStateFlow<Map<Int, Boolean>>(emptyMap())
+    val isLoadingVerses: StateFlow<Map<Int, Boolean>> = _isLoadingVerses.asStateFlow()
+
+    fun loadSuraVerses(suraId: Int) {
+        if (_loadedSuraVerses.value.containsKey(suraId)) return
+        if (_isLoadingVerses.value[suraId] == true) return
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isLoadingVerses.value = _isLoadingVerses.value + (suraId to true)
+            try {
+                val cached = prefs.getString("sura_verses_$suraId", null)
+                if (cached != null) {
+                    val versesList = cached.split("|||")
+                    _loadedSuraVerses.value = _loadedSuraVerses.value + (suraId to versesList)
+                    _isLoadingVerses.value = _isLoadingVerses.value - suraId
+                    return@launch
+                }
+
+                val url = java.net.URL("https://api.alquran.cloud/v1/surah/$suraId/ar.warsh")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 8000
+                connection.readTimeout = 10000
+                connection.connect()
+
+                if (connection.responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                    val text = connection.inputStream.bufferedReader().use { it.readText() }
+                    val jsonObject = org.json.JSONObject(text)
+                    val data = jsonObject.getJSONObject("data")
+                    val ayahs = data.getJSONArray("ayahs")
+                    val list = mutableListOf<String>()
+                    for (i in 0 until ayahs.length()) {
+                        val ayah = ayahs.getJSONObject(i)
+                        list.add(ayah.getString("text"))
+                    }
+
+                    if (list.isNotEmpty()) {
+                        _loadedSuraVerses.value = _loadedSuraVerses.value + (suraId to list)
+                        val joined = list.joinToString("|||")
+                        prefs.edit().putString("sura_verses_$suraId", joined).apply()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isLoadingVerses.value = _isLoadingVerses.value - suraId
+            }
+        }
+    }
+
     // --- AI Advising State ---
     private val _aiProductivityAdvice = MutableStateFlow<String?>(null)
     val aiProductivityAdvice: StateFlow<String?> = _aiProductivityAdvice.asStateFlow()
 
     private val _isAnalyzingProductivity = MutableStateFlow(false)
     val isAnalyzingProductivity: StateFlow<Boolean> = _isAnalyzingProductivity.asStateFlow()
+
+    private val _aiFuturePlanAdvice = MutableStateFlow<String?>(null)
+    val aiFuturePlanAdvice: StateFlow<String?> = _aiFuturePlanAdvice.asStateFlow()
+
+    private val _isAnalyzingFuturePlan = MutableStateFlow(false)
+    val isAnalyzingFuturePlan: StateFlow<Boolean> = _isAnalyzingFuturePlan.asStateFlow()
+
+    private val _futureQuranBaseline = MutableStateFlow(prefs.getInt("FutureQuranBaseline", 10))
+    val futureQuranBaseline: StateFlow<Int> = _futureQuranBaseline.asStateFlow()
+
+    fun updateFutureQuranBaseline(baseline: Int) {
+        _futureQuranBaseline.value = baseline
+        prefs.edit().putInt("FutureQuranBaseline", baseline).apply()
+    }
 
     // --- Focus Mode State ---
     private val _isFocusActive = MutableStateFlow(false)
@@ -273,6 +581,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             }
             updateMonthlyHabitAlertState()
             loadPostPrayerQuranStatus()
+            refreshDownloadedSuras()
         }
     }
 
@@ -357,6 +666,23 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                 e.printStackTrace()
             } finally {
                 _isAnalyzingProductivity.value = false
+            }
+        }
+    }
+
+    fun analyzeFuturePlanWithAI() {
+        viewModelScope.launch {
+            _isAnalyzingFuturePlan.value = true
+            try {
+                val tasks = allTasks.value
+                val habits = allHabits.value
+                val baseline = _futureQuranBaseline.value
+                val response = com.example.api.GeminiClient.getFuturePlanEvaluation(baseline, tasks, habits)
+                _aiFuturePlanAdvice.value = response
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isAnalyzingFuturePlan.value = false
             }
         }
     }

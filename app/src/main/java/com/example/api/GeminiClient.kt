@@ -114,6 +114,88 @@ object GeminiClient {
         }
     }
 
+    suspend fun getFuturePlanEvaluation(
+        quranBaseline: Int,
+        tasks: List<Task>,
+        habits: List<Habit>
+    ): String = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext getFallbackFuturePlan(quranBaseline)
+        }
+
+        val prompt = """
+            بصفتك مستشار التنمية والارتقاء الشخصي الإسلامي والإنتاجية الذكية، نطلب منك تحسين "الخطة المستقبلية لتبني العادات والمهام" للمستخدم واقتراح "خطة تقويم وإصلاح زمنية" تهدف للارتقاء بقراءة وتلاوة القرآن الكريم بزيادة تدريجية دقيقة تقدر بالنسبة 10% شهرياً.
+
+            المعطيات الحالية للمستخدم:
+            - معدل قراءة القرآن الأولي الحالي (في اليوم): $quranBaseline صفحات.
+            - الجدول المقدر للزيادة المقترحة (+10% شهرياً):
+              * الشهر الأول: ${quranBaseline} صفحات
+              * الشهر الثاني: ${String.format("%.1f", quranBaseline * 1.1)} صفحات
+              * الشهر الثالث: ${String.format("%.1f", quranBaseline * 1.21)} صفحات
+              * الشهر الرابع: ${String.format("%.1f", quranBaseline * 1.33)} صفحات
+              * الشهر الخامس: ${String.format("%.1f", quranBaseline * 1.46)} صفحات
+              * الشهر السادس: ${String.format("%.1f", quranBaseline * 1.61)} صفحات
+
+            يرجى تقديم رد متكامل ومنظم ومصاغ باللغة العربية بأسلوب راقٍ وملهم ومؤثر لبيان أهمية قراءة القرآن والمثابرة، يحتوي على:
+            1. **تحليل خطة الورد القرآني والارتقاء التدريجي لـ 10%**: خطوات عملية ومجربة يومياً وأسبوعياً لتثبيت زيادة الـ 10% شهرياً بذكاء ودون تراخٍ (مثال: توزيع القراءة على دبر الصلوات الخمس بزيادة سطر في كل صلاة).
+            2. **كيفية تحسين وتنظيم الخطة المستقبلية اليومية للمستخدم**: كيفية موازنة العادات والعمل ودمج الورد القرآني ضمنها بنجاح وموازنة دقيقة.
+            3. **خطة تقويمية وتوجيهات نفسية وروحية**: لتحسين الهمة وزيادة الالتزام والخشوع بورد القرآن الكريم المتنامي وتدبره.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(
+                Content(
+                    parts = listOf(Part(text = prompt))
+                )
+            )
+        )
+
+        try {
+            val responseBody = RetrofitClient.service.generateContent(apiKey, request)
+            val jsonString = responseBody.string()
+            val jsonObject = JSONObject(jsonString)
+            val candidates = jsonObject.getJSONArray("candidates")
+            val firstCandidate = candidates.getJSONObject(0)
+            val content = firstCandidate.getJSONObject("content")
+            val parts = content.getJSONArray("parts")
+            val text = parts.getJSONObject(0).getString("text")
+            text
+        } catch (e: Exception) {
+            e.printStackTrace()
+            getFallbackFuturePlan(quranBaseline)
+        }
+    }
+
+    private fun getFallbackFuturePlan(quranBaseline: Int): String {
+        val m1 = quranBaseline
+        val m2 = String.format("%.1f", quranBaseline * 1.1)
+        val m3 = String.format("%.1f", quranBaseline * 1.21)
+        val m4 = String.format("%.1f", quranBaseline * 1.33)
+        val m5 = String.format("%.1f", quranBaseline * 1.46)
+        val m6 = String.format("%.1f", quranBaseline * 1.61)
+
+        return """
+            📊 **تحليل خطة التقويم والارتقاء الرقمي التلقائي (التحليل المحلي):**
+
+            نسعى في تطبيق "حياتي" لمساعدتك في بناء روتين إيماني متصاعد ومستدام. إليك خطتك التفصيلية المقترحة للتقويم والزيادة التدريجية بنسبة 10% شهرياً:
+
+            ### 📈 جدول التقويم والورد الرقمي المتوقع (6 أشهر):
+            - **الشهر الأول**: $m1 صفحات يومياً (الأساس الثابت وحضور القلب).
+            - **الشهر الثاني**: $m2 صفحات يومياً (إضافة 10% - تثبيت العادة وتعميق التدبر).
+            - **الشهر الثالث**: $m3 صفحات يومياً (إضافة 10% - استغلال فترات البكور بعد الفجر).
+            - **الشهر الرابع**: $m4 صفحات يومياً (إضافة 10% - الموازنة والربط بصلوات الفريضة).
+            - **الشهر الخامس**: $m5 صفحات يومياً (إضافة 10% - تهيئة النفس للتلاوة الطويلة والخشوع).
+            - **الشهر السادس**: $m6 صفحات يومياً (إضافة 10% - مضاعفة الورد عن البداية بسلاسة تامة).
+
+            ### 🛠️ منهجية خطة التقويم وخطوات التنفيذ العملية:
+            1. **ستراتيجية التوزيع المجزأ**: لا تقرأ الورد دفعة واحدة، بل وزّع الصفحات المطلوبة بمقدار صفحة أو صفحتين دبر كل صلاة مكتوبة لتشعر بخفتها.
+            2. **مبدأ الالتزام في البكور (ما بعد الفجر)**: احرص على قراءة 40% من مستهدفك اليومي بعد صلاة الفجر مباشرة، حيث يكون الذهن صافياً وخالياً من المشتتات والشاغلات اليومية.
+            3. **نظام التعويض المرن**: إذا عجزت عن إكمال المستهدف في يومٍ ما، التزم بتعويض النقص في اليوم التالي أو في عطلة نهاية الأسبوع لتبقى في المسار الصحيح.
+            4. **تقويم النية المترابط**: اجعل زيادة التلاوة عبادة متصلة بالتأمل لتنمية السكينة النفسية والتخلص من ضغوط العمل والحياة اليومية.
+        """.trimIndent()
+    }
+
     private fun getFallbackAdvice(
         tasks: List<Task>,
         habits: List<Habit>,
