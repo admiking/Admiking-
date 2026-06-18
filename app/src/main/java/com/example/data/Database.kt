@@ -23,7 +23,13 @@ data class Habit(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
     val streak: Int = 0,
-    val lastCompletedDate: String? = null // Format: "yyyy-MM-dd"
+    val lastCompletedDate: String? = null, // Format: "yyyy-MM-dd"
+    val icon: String = "✨",
+    val category: String = "عام", // "رياضة", "عبادة", "تعلم", "صحة", "عمل", "تطوير"
+    val targetDurationMinutes: Int = 15,
+    val reminderTime: String? = null, // Format: "HH:mm"
+    val aiExpectedDays: Int = 21,
+    val aiExplanation: String? = null
 )
 
 @Entity(
@@ -88,6 +94,9 @@ interface HabitDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHabit(habit: Habit): Long
 
+    @Update
+    suspend fun updateHabit(habit: Habit)
+
     @Query("DELETE FROM habits WHERE id = :id")
     suspend fun deleteHabitById(id: Int)
 
@@ -123,7 +132,7 @@ interface AppUsageDao {
 
 @Database(
     entities = [Task::class, Habit::class, HabitLog::class, AppUsageRecord::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -141,7 +150,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "hayaty_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

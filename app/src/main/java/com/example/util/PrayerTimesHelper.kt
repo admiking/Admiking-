@@ -169,4 +169,110 @@ object PrayerTimesHelper {
             PrayerTime(name, arabicName, finalTimeStr)
         }
     }
+
+    fun fetchPrayerTimesFromApi(
+        latitude: Double?,
+        longitude: Double?,
+        cityName: String?,
+        countryName: String?
+    ): List<PrayerTime>? {
+        var connection: java.net.HttpURLConnection? = null
+        try {
+            val urlBuilder = java.lang.StringBuilder("https://quran.yousefheiba.com/api/getPrayerTimes")
+            var hasQuery = false
+            if (latitude != null && longitude != null) {
+                urlBuilder.append("?latitude=").append(latitude)
+                    .append("&longitude=").append(longitude)
+                    .append("&lat=").append(latitude)
+                    .append("&lng=").append(longitude)
+                    .append("&lon=").append(longitude)
+                hasQuery = true
+            }
+            if (!cityName.isNullOrBlank()) {
+                val prefix = if (hasQuery) "&" else "?"
+                urlBuilder.append(prefix).append("city=").append(java.net.URLEncoder.encode(cityName, "UTF-8"))
+                if (!countryName.isNullOrBlank()) {
+                    urlBuilder.append("&country=").append(java.net.URLEncoder.encode(countryName, "UTF-8"))
+                }
+            }
+
+            val url = java.net.URL(urlBuilder.toString())
+            connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 7000
+            connection.readTimeout = 7000
+            connection.useCaches = false
+            
+            val responseCode = connection.responseCode
+            if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                val responseStr = connection.inputStream.bufferedReader().use { it.readText() }
+                return parsePrayerTimesFromJson(responseStr)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            connection?.disconnect()
+        }
+        return null
+    }
+
+    fun parsePrayerTimesFromJson(jsonString: String): List<PrayerTime>? {
+        try {
+            val json = org.json.JSONObject(jsonString)
+            var timingsObject: org.json.JSONObject? = null
+            
+            if (json.has("Fajr") || json.has("fajr")) {
+                timingsObject = json
+            } else if (json.has("data")) {
+                val dataObj = json.optJSONObject("data")
+                if (dataObj != null) {
+                    if (dataObj.has("timings")) {
+                        timingsObject = dataObj.optJSONObject("timings")
+                    } else {
+                        timingsObject = dataObj
+                    }
+                }
+            } else if (json.has("timings")) {
+                timingsObject = json.optJSONObject("timings")
+            }
+
+            if (timingsObject != null) {
+                val prayerList = mutableListOf<PrayerTime>()
+                val possibleNames = listOf(
+                    Triple("Fajr", "الفجر", listOf("fajr", "Fajr", "fajr_time")),
+                    Triple("Shorouk", "الشروق", listOf("shorouk", "Shorouk", "sunrise", "Sunrise", "shuruq")),
+                    Triple("Dhuhr", "الظهر", listOf("dhuhr", "Dhuhr", "duhr", "Duhr", "dohr")),
+                    Triple("Asr", "العصر", listOf("asr", "Asr")),
+                    Triple("Maghrib", "المغرب", listOf("maghrib", "Maghrib")),
+                    Triple("Isha", "العشاء", listOf("isha", "Isha"))
+                )
+                
+                for ((engName, araName, keys) in possibleNames) {
+                    var foundTime: String? = null
+                    for (k in keys) {
+                        if (timingsObject.has(k)) {
+                            val raw = timingsObject.optString(k, "")
+                            if (raw.isNotBlank()) {
+                                val matcher = java.util.regex.Pattern.compile("(\\d{2}:\\d{2})").matcher(raw)
+                                if (matcher.find()) {
+                                    foundTime = matcher.group(1)
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if (foundTime != null) {
+                        prayerList.add(PrayerTime(engName, araName, foundTime))
+                    }
+                }
+                
+                if (prayerList.size >= 5) {
+                    return prayerList
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
 }

@@ -42,14 +42,25 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.Manifest
 import android.annotation.SuppressLint
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -210,19 +221,57 @@ fun HayatyApp(viewModel: HayatyViewModel) {
 // ==========================================
 @Composable
 fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
+    val context = LocalContext.current
     val tasks by viewModel.allTasks.collectAsStateWithLifecycle()
     val prayerTimes by viewModel.prayerTimes.collectAsStateWithLifecycle()
     val selectedCity by viewModel.selectedCity.collectAsStateWithLifecycle()
+    val selectedCountry by viewModel.selectedCountry.collectAsStateWithLifecycle()
     val habits by viewModel.allHabits.collectAsStateWithLifecycle()
     val todayLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
     val allHabitLogs by viewModel.allHabitLogs.collectAsStateWithLifecycle()
     val usageRecords by viewModel.usageRecords.collectAsStateWithLifecycle()
 
+    val currentTimeOfDay by viewModel.currentTimeOfDay.collectAsStateWithLifecycle()
+    val timeOfDayOverride by viewModel.timeOfDayOverride.collectAsStateWithLifecycle()
+
+    val backgroundBrush = remember(currentTimeOfDay, androidx.compose.foundation.isSystemInDarkTheme()) {
+        val colors = when (currentTimeOfDay) {
+            "morning" -> {
+                if (true) { // We can use the dynamic colors or dark theme check
+                    listOf(Color(0xFF0B121F), Color(0xFF111E36))
+                } else {
+                    listOf(Color(0xFFE0F2FE), Color(0xFFF0F9FF))
+                }
+            }
+            "evening" -> {
+                if (true) {
+                    listOf(Color(0xFF1E0C26), Color(0xFF2E173D))
+                } else {
+                    listOf(Color(0xFFFFECE0), Color(0xFFFFF6F0))
+                }
+            }
+            "night" -> {
+                if (true) {
+                    listOf(Color(0xFF070A13), Color(0xFF0F1528))
+                } else {
+                    listOf(Color(0xFFEBEFF5), Color(0xFFF1F5F9))
+                }
+            }
+            else -> {
+                if (true) {
+                    listOf(Color(0xFF121212), Color(0xFF1E1E1E))
+                } else {
+                    listOf(Color(0xFFF9FAFB), Color(0xFFFFFFFF))
+                }
+            }
+        }
+        androidx.compose.ui.graphics.Brush.verticalGradient(colors)
+    }
+
     val isUsingGps by viewModel.isUsingGps.collectAsStateWithLifecycle()
     val gpsLatitude by viewModel.gpsLatitude.collectAsStateWithLifecycle()
     val gpsLongitude by viewModel.gpsLongitude.collectAsStateWithLifecycle()
 
-    val context = LocalContext.current
     val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -260,7 +309,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(backgroundBrush)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -360,6 +409,131 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             contentDescription = "إضافة مهمة",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // --- TIME OF DAY DYNAMIC BANNER WITH LIVE CLOCK ---
+        item {
+            var timeString by remember { mutableStateOf("") }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    val sdf = SimpleDateFormat("HH:mm:ss a", Locale("ar"))
+                    timeString = sdf.format(Date())
+                    kotlinx.coroutines.delay(1000)
+                }
+            }
+
+            val cardGradientColors = when (currentTimeOfDay) {
+                "morning" -> listOf(Color(0xFF2563EB), Color(0xFF38BDF8), Color(0xFFFBBF24)) // Bright morning blue-amber
+                "evening" -> listOf(Color(0xFFEA580C), Color(0xFFBE185D), Color(0xFF311042)) // Sunset warm orange-magenta
+                "night" -> listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF111827)) // Deep celestial midnight navy
+                else -> listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8))
+            }
+
+            val greetingText = when (currentTimeOfDay) {
+                "morning" -> "صباح الخير والبركة والنشاط! ☀️"
+                "evening" -> "مساء الخير والهدوء والبر والتقوى! 🌅"
+                "night" -> "مساء الطمأنينة والذكر والقيام! 🌙"
+                else -> "طاب يومك بكل خير وسعادة! ✨"
+            }
+
+            val subtitleText = when (currentTimeOfDay) {
+                "morning" -> "«يا حي يا قيوم برحمتك أستغيث..» ابدأ يومك بهمة ونشاط وعزيمة."
+                "evening" -> "صلاة المساء وأذكار الغروب تبث الطمأنينة في قلبك وعائلتك."
+                "night" -> "سكينة الليل فرصة للذكر، قراءة الورد، وصلاة ركعتين في جوف الليل."
+                else -> "اذكر الله في كل وقت وحين، وتوكل عليه في كل أمورك."
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .testTag("time_of_day_banner_card"),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(Brush.linearGradient(cardGradientColors))
+                        .padding(20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = greetingText,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            
+                            // Manual override control bar
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                val modes = listOf("auto" to "🔄", "morning" to "☀️", "evening" to "🌅", "night" to "🌙")
+                                modes.forEach { (m, emoji) ->
+                                    val isSel = timeOfDayOverride == m
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSel) Color.White else Color.Transparent)
+                                            .clickable { viewModel.setTimeOfDayOverride(m) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(text = emoji, fontSize = 11.sp, color = if (isSel) Color.Black else Color.White)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(14.dp))
+                        
+                        // Live digital clock with beautiful M3 layout
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                                .padding(vertical = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = "الساعة والوقت",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = timeString,
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.sp
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Text(
+                            text = subtitleText,
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
                         )
                     }
                 }
@@ -602,7 +776,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                         "📍 موقعي (جاري التحديد...)"
                                     }
                                 } else {
-                                    selectedCity
+                                    if (selectedCountry.isNotBlank() && selectedCountry != "المفترضة" && selectedCountry != "المملكة العربية السعودية") {
+                                        "$selectedCity، $selectedCountry"
+                                    } else {
+                                        selectedCity
+                                    }
                                 },
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -966,6 +1144,218 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
             }
         }
 
+        // --- DAILY FIQH QUESTION OF THE DAY WIDGET ---
+        item {
+            val todayDateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val prefs = remember(context) { context.getSharedPreferences("HayatyPrefs", android.content.Context.MODE_PRIVATE) }
+            var isFiqhReadToday by remember(todayDateStr) { mutableStateOf(prefs.getBoolean("FiqhReadMark_$todayDateStr", false)) }
+            var showAnswerState by remember { mutableStateOf(false) }
+
+            val dayOfYear = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
+            val fiqhQuestions = com.example.data.FiqhData.questions
+            val currentQuestion = if (fiqhQuestions.isNotEmpty()) {
+                fiqhQuestions[dayOfYear % fiqhQuestions.size]
+            } else {
+                null
+            }
+
+            if (currentQuestion != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isFiqhReadToday) Color(0xFFE8F5E9).copy(alpha = 0.8f)
+                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
+                    ),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (isFiqhReadToday) Color(0xFF81C784) else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "💡 مسألة اليوم الفقهية",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isFiqhReadToday) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            
+                            if (isFiqhReadToday) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF2E7D32))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "مُكتملة اليوم ✓",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "غير مقروءة",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Category tag
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isFiqhReadToday) Color(0x202E7D32) else MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "الباب: ${currentQuestion.category}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isFiqhReadToday) Color(0xFF2E7D32) else MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "السؤال المطروح:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.61f),
+                            textAlign = TextAlign.Right,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text(
+                            text = currentQuestion.question,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Right,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            lineHeight = 20.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Animated Visibility / Expandable answer box
+                        if (showAnswerState) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isFiqhReadToday) Color(0xFFF1F8E9) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                ),
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "الجواب الشرعي المعتمد والمستنبط:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isFiqhReadToday) Color(0xFF33691E) else MaterialTheme.colorScheme.secondary,
+                                        textAlign = TextAlign.Right,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = currentQuestion.answer,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Right,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        lineHeight = 18.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { showAnswerState = !showAnswerState },
+                                modifier = Modifier.weight(1.5f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isFiqhReadToday) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(
+                                    text = if (showAnswerState) "إخفاء الجواب 🙈" else "عرض الجواب الفقهي 📜",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            if (!isFiqhReadToday) {
+                                OutlinedButton(
+                                    onClick = {
+                                        isFiqhReadToday = true
+                                        prefs.edit().putBoolean("FiqhReadMark_$todayDateStr", true).apply()
+                                    },
+                                    modifier = Modifier.weight(1.2f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                ) {
+                                    Text(
+                                        text = "قرأت مـسألة اليوم ✓",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        isFiqhReadToday = false
+                                        prefs.edit().putBoolean("FiqhReadMark_$todayDateStr", false).apply()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+                                    border = BorderStroke(1.dp, Color(0xFFEF9A9A))
+                                ) {
+                                    Text(
+                                        text = "إلغاء الإتمام",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // --- HABIT TRACKER INTERACTIVE WIDGET ---
         item {
             var quickHabitName by remember { mutableStateOf("") }
@@ -1063,12 +1453,19 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                                 ),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(
-                                                imageVector = if (isCompleted) Icons.Default.Check else Icons.Default.Star,
-                                                contentDescription = "التزام",
-                                                tint = if (isCompleted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp)
-                                            )
+                                            if (isCompleted) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "التزام",
+                                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = habit.icon,
+                                                    fontSize = 16.sp
+                                                )
+                                            }
                                         }
 
                                         Spacer(modifier = Modifier.width(10.dp))
@@ -1440,8 +1837,13 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
+                var customCountryInput by remember { mutableStateOf("") }
+                var customCityInput by remember { mutableStateOf("") }
+
                 Column(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(text = "طريقة تحديد مواقيت الصلاة", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1480,13 +1882,65 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "أو اختر يدوياً من المدن المتاحة:",
+                        text = "🌍 تحديد دولة ومدينة مخصصة (توقيت عالمي):",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Right
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = customCountryInput,
+                        onValueChange = { customCountryInput = it },
+                        label = { Text("اسم الدولة (مثال: فرنسا, كندا, مصر)", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = customCityInput,
+                        onValueChange = { customCityInput = it },
+                        label = { Text("اسم المدينة (مثال: باريس, مونتريال, الإسكندرية)", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            if (customCountryInput.isNotBlank() && customCityInput.isNotBlank()) {
+                                viewModel.setUsingGps(false, context)
+                                viewModel.setSelectedCountryAndCity(customCountryInput.trim(), customCityInput.trim())
+                                showCitySelectorDialog = false
+                            }
+                        },
+                        enabled = customCountryInput.isNotBlank() && customCityInput.isNotBlank(),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("تطبيق الموقع مخصّصاً 🌐", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "أو اختر يدوياً من المدن الكبرى الرسمية:",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Right
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -1495,12 +1949,12 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         TextButton(
                             onClick = {
                                 viewModel.setUsingGps(false, context)
-                                viewModel.setCity(city)
+                                viewModel.setSelectedCountryAndCity("", city)
                                 showCitySelectorDialog = false
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(text = city, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            Text(text = city, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -1626,16 +2080,26 @@ fun TaskRowItem(task: Task, onToggle: () -> Unit, onDelete: () -> Unit) {
 // ==========================================
 @Composable
 fun HabitsScreen(viewModel: HayatyViewModel) {
+    val context = LocalContext.current
     val habits by viewModel.allHabits.collectAsStateWithLifecycle()
     val logs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
     var showAddHabitDialog by remember { mutableStateOf(false) }
+    var editingHabit by remember { mutableStateOf<Habit?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
-    val showMonthlyHabitAlert by viewModel.showMonthlyHabitAlert.collectAsStateWithLifecycle()
-    val quranWirdPages by viewModel.quranWirdPages.collectAsStateWithLifecycle()
-    val quranWirdIncreasePeriod by viewModel.quranWirdIncreasePeriod.collectAsStateWithLifecycle()
-    val quranWirdIncreasePages by viewModel.quranWirdIncreasePages.collectAsStateWithLifecycle()
-    val quranWirdStartDate by viewModel.quranWirdStartDate.collectAsStateWithLifecycle()
+    if (editingHabit != null) {
+        val habitToEdit = habits.firstOrNull { it.id == editingHabit?.id } ?: editingHabit!!
+        HabitDetailScreen(
+            habit = habitToEdit,
+            viewModel = viewModel,
+            onBack = { editingHabit = null }
+        )
+    } else {
+        val showMonthlyHabitAlert by viewModel.showMonthlyHabitAlert.collectAsStateWithLifecycle()
+        val quranWirdPages by viewModel.quranWirdPages.collectAsStateWithLifecycle()
+        val quranWirdIncreasePeriod by viewModel.quranWirdIncreasePeriod.collectAsStateWithLifecycle()
+        val quranWirdIncreasePages by viewModel.quranWirdIncreasePages.collectAsStateWithLifecycle()
+        val quranWirdStartDate by viewModel.quranWirdStartDate.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier
@@ -2100,6 +2564,106 @@ fun HabitsScreen(viewModel: HayatyViewModel) {
                                     Text("تسريع +30 يوم (تجربة) ⏩", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, maxLines = 1)
                                 }
                             }
+
+                            // --- GOOGLE DRIVE CLOUD SYNC SECTION ---
+                            val googleEmail by viewModel.googleAccountEmail.collectAsStateWithLifecycle()
+                            val backupTime by viewModel.googleBackupTime.collectAsStateWithLifecycle()
+
+                            Spacer(modifier = Modifier.height(18.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Text(
+                                text = "☁️ النسخ الاحتياطي ومزامنة الحساب السحابي (Google Drive):",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (googleEmail == null) {
+                                Button(
+                                    onClick = {
+                                        viewModel.connectGoogleAccount("user@gmail.com")
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.Cloud, contentDescription = "سحابة", modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("ربط حساب Google ومزامنة الإعدادات 🔗", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text("الحساب المتصل: $googleEmail ✅", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                            Text("آخر مزامنة للتطبيق: $backupTime", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+
+                                        IconButton(
+                                            onClick = { viewModel.disconnectGoogleAccount() },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Logout, contentDescription = "خروج", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.performGoogleDriveBackup(
+                                                    context,
+                                                    onSuccess = {},
+                                                    onError = {}
+                                                )
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp)
+                                        ) {
+                                            Icon(Icons.Default.CloudUpload, contentDescription = "رفع", modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("إجراء المزامنة 📤", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                viewModel.restoreGoogleDriveBackup(
+                                                    context,
+                                                    onSuccess = {},
+                                                    onError = {}
+                                                )
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                                            contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp)
+                                        ) {
+                                            Icon(Icons.Default.CloudDownload, contentDescription = "استعادة", modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("استعادة المزامنة 📥", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2231,13 +2795,30 @@ fun HabitsScreen(viewModel: HayatyViewModel) {
 
                     Spacer(modifier = Modifier.width(16.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = habit.name,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isCompleted) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
-                        )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { editingHabit = habit }
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = habit.icon, fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = habit.name,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isCompleted) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "تخصيص",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -2322,6 +2903,7 @@ fun HabitsScreen(viewModel: HayatyViewModel) {
                 showAddHabitDialog = false
             }
         )
+    }
     }
 }
 
@@ -3042,6 +3624,19 @@ fun FocusScreen(viewModel: HayatyViewModel) {
     var selectedAppRecord by remember { mutableStateOf<com.example.data.AppUsageRecord?>(null) }
     var userReflectionAnswer by remember { mutableStateOf<String?>(null) }
 
+    var hasUsageStats by remember { mutableStateOf(hasUsageStatsPermission(context)) }
+
+    // Poll the permission status
+    LaunchedEffect(Unit) {
+        while (true) {
+            val currentStatus = hasUsageStatsPermission(context)
+            if (currentStatus != hasUsageStats) {
+                hasUsageStats = currentStatus
+            }
+            kotlinx.coroutines.delay(1500)
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -3062,6 +3657,51 @@ fun FocusScreen(viewModel: HayatyViewModel) {
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
+        }
+
+        if (!hasUsageStats) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "⚠️ ميزة غلق التطبيقات المشتتة غير نشطة",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "الرجاء تفعيل إذن 'الوصول إلى بيانات الاستخدام' لتمكين التطبيق من التعرف على التطبيقات الأخرى المفتوحة (يوتيوب، فيسبوك، إلخ) وإجبارها على الإغلاق والتبديل لوضع التركيز.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            lineHeight = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                        ) {
+                            Text("منح إذن غلق التطبيقات وتتبع الاستخدام 🔓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
 
         // --- SCREEN TIME GRAPH & INTERACTIVE ANALYSIS ---
@@ -3487,6 +4127,22 @@ fun hasOverlayPermission(context: Context): Boolean {
         Settings.canDrawOverlays(context)
     } else {
         true
+    }
+}
+
+fun hasUsageStatsPermission(context: Context): Boolean {
+    return try {
+        val pm = context.packageManager
+        val appInfo = pm.getApplicationInfo(context.packageName, 0)
+        val appOpsManager = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+        val mode = appOpsManager.checkOpNoThrow(
+            android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+            appInfo.uid,
+            context.packageName
+        )
+        mode == android.app.AppOpsManager.MODE_ALLOWED
+    } catch (e: Exception) {
+        false
     }
 }
 
@@ -4279,6 +4935,25 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                     }
 
                     4 -> { // ---------------------- TAB 4: OVERLAY SETTINGS ----------------------
+                        var hasNotificationPermission by remember {
+                            mutableStateOf(
+                                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                } else {
+                                    true
+                                }
+                            )
+                        }
+
+                        val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.RequestPermission()
+                        ) { isGranted ->
+                            hasNotificationPermission = isGranted
+                        }
+
                         Column(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -4355,6 +5030,67 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                                             modifier = Modifier.fillMaxWidth().height(38.dp)
                                         ) {
                                             Text("منح إذن الظهور فوق التطبيقات 🔓", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- CARD 1.5: NOTIFICATION PERMISSION STATUS ---
+                            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (hasNotificationPermission) Color(0xFF81C784).copy(alpha = 0.5f) else Color(0xFFFFD54F).copy(alpha = 0.5f)
+                                    ),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (hasNotificationPermission) Color(0xFFE8F5E9).copy(alpha = 0.35f) else Color(0xFFFFFDE7).copy(alpha = 0.35f)
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = "إذن إشعارات التطبيق والخدمة",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (hasNotificationPermission) Color(0xFF1B5E20) else Color(0xFFE65100)
+                                            )
+                                            
+                                            Text(
+                                                text = if (hasNotificationPermission) "مسموح ومفعل ✅" else "غير مسموح ⚠️",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (hasNotificationPermission) Color(0xFF2E7D32) else Color(0xFFEF6C00)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(6.dp))
+
+                                        Text(
+                                            text = if (hasNotificationPermission) "إعلانات وخدمة التذكير بالأذكار تعمل بسلاسة تامة في شريط الإشعارات." else "يرجى منح إذن إشعارات النظام للتطبيق لضمان عمل الخدمة وعرض التنبيهات في الخلفية.",
+                                            fontSize = 11.sp,
+                                            color = if (hasNotificationPermission) Color(0xFF2E7D32).copy(alpha = 0.8f) else Color(0xFFD84315),
+                                            lineHeight = 15.sp
+                                        )
+
+                                        if (!hasNotificationPermission) {
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Button(
+                                                onClick = {
+                                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF6C00)),
+                                                modifier = Modifier.fillMaxWidth().height(38.dp)
+                                            ) {
+                                                Text("منح إذن الإشعارات الفوري 🔔", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                     }
                                 }
@@ -4739,6 +5475,8 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
     val isCurrentlyLoading = isLoadingVerses[sura.id] == true
     val versesList = if (sura.verses.isNotEmpty()) sura.verses else (loadedSuraVerses[sura.id] ?: emptyList())
 
+    var readerMode by remember { mutableStateOf(0) } // 0 = standard text, 1 = yousefheiba website
+
     // Fetch verses if list is empty and we aren't already loading
     LaunchedEffect(sura.id) {
         if (sura.verses.isEmpty() && !loadedSuraVerses.containsKey(sura.id)) {
@@ -4797,112 +5535,244 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
             }
         }
 
-        // Surah Verses
-        if (isCurrentlyLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "جاري تحميل نص السورة برواية ورش...",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        } else if (versesList.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Cloud,
-                        contentDescription = "تنبيه اتصال",
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "يتطلب قراءة سورة ${sura.name} الاتصال بالإنترنت لأول مرة لتحميلها برواية ورش.",
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "بإمكانك تشغيل التلاوة الصوتية مباشرة مع تحميلها للاستماع دون اتصال.",
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { viewModel.loadSuraVerses(sura.id) }
-                    ) {
-                        Text("تحميل النص الآن")
-                    }
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (sura.id != 1 && sura.id != 9) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, Color(0xFFD4AF37), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "الرَّحْمَٰنِ الرَّحِيمِ",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E7D32)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                }
+        // Segmented Reader Mode selector
+        TabRow(
+            selectedTabIndex = readerMode,
+            containerColor = Color(0xFFF1ECE4),
+            contentColor = Color(0xFF1B5E20),
+            modifier = Modifier.fillMaxWidth().testTag("quran_reader_mode_tabs")
+        ) {
+            Tab(
+                selected = readerMode == 0,
+                onClick = { readerMode = 0 },
+                text = { Text("قراءة بالرسم العثماني 📝", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            )
+            Tab(
+                selected = readerMode == 1,
+                onClick = { readerMode = 1 },
+                text = { Text("مصحف يوسف هيبة الإلكتروني 🌐", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            )
+        }
 
-                items(versesList.indices.toList()) { index ->
-                    val verse = versesList[index]
+        if (readerMode == 1) {
+            // Premium interactive WebView loader for quran.yousefheiba.com
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            databaseEnabled = true
+                            useWideViewPort = true
+                            loadWithOverviewMode = true
+                            builtInZoomControls = true
+                            displayZoomControls = false
+                            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                        }
+                        webViewClient = android.webkit.WebViewClient()
+                        loadUrl("https://quran.yousefheiba.com/")
+                    }
+                },
+                modifier = Modifier.fillMaxSize().testTag("quran_yousefheiba_webview")
+            )
+        } else {
+            // Surah Verses
+            if (isCurrentlyLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "جاري تحميل نص السورة برواية ورش...",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            } else if (versesList.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = "تنبيه اتصال",
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "يتطلب قراءة سورة ${sura.name} الاتصال بالإنترنت لأول مرة لتحميلها برواية ورش.",
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "بإمكانك تشغيل التلاوة الصوتية مباشرة مع تحميلها للاستماع دون اتصال.",
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { viewModel.loadSuraVerses(sura.id) }
+                        ) {
+                            Text("تحميل النص الآن")
+                        }
+                    }
+                }
+            } else {
+                val versesPerPage = 8
+                val totalPages = (versesList.size + versesPerPage - 1) / versesPerPage
+                var currentPage by remember(sura.id) { mutableStateOf(0) }
+
+                val pageStart = currentPage * versesPerPage
+                val pageEnd = minOf(pageStart + versesPerPage, versesList.size)
+                val pageVerses = versesList.subList(pageStart, pageEnd)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Sura details headers / Basmalah
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = verse,
-                            fontSize = 20.sp,
+                            text = "سورة ${sura.name} - الصفحة ${currentPage + 1} من $totalPages",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Serif,
-                            color = Color(0xFF1B5E20),
-                            textAlign = TextAlign.Center,
-                            lineHeight = 36.sp
+                            color = Color(0xFF9E782F),
+                            textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Centered Basmalah on the very first page of appropriate surahs
+                        if (currentPage == 0 && sura.id != 1 && sura.id != 9) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+
+                    // Main Quran Page content
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(vertical = 8.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFDFBF7)), // Soft parchment style
+                        border = BorderStroke(1.5.dp, Color(0xFFD4AF37).copy(alpha = 0.5f))
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
-                                .border(1.5.dp, Color(0xFFD4AF37), CircleShape)
-                                .background(Color.White, CircleShape),
-                            contentAlignment = Alignment.Center
+                                .fillMaxSize()
+                                .padding(16.dp)
                         ) {
-                            Text(
-                                text = "${index + 1}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color(0xFFD4AF37)
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState()),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                // Rich concatenated flowing text
+                                val annotatedText = buildAnnotatedString {
+                                    pageVerses.forEachIndexed { relativeIndex, verse ->
+                                        val absoluteIndex = pageStart + relativeIndex + 1
+                                        withStyle(style = SpanStyle(
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Serif,
+                                            color = Color(0xFF1B5E20)
+                                        )) {
+                                            append(verse.trim())
+                                        }
+                                        append(" ")
+                                        // Custom golden inline verse circle index: ﴿١﴾
+                                        withStyle(style = SpanStyle(
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color(0xFFD4AF37)
+                                        )) {
+                                            append(" ﴿$absoluteIndex﴾ ")
+                                        }
+                                        append(" ")
+                                    }
+                                }
+
+                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                    Text(
+                                        text = annotatedText,
+                                        textAlign = TextAlign.Justify,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        lineHeight = 44.sp
+                                    )
+                                }
+                            }
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 0.5.dp)
+                    }
+
+                    // Paging control bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                if (currentPage > 0) {
+                                    currentPage--
+                                }
+                            },
+                            enabled = currentPage > 0,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1B5E20),
+                                disabledContainerColor = Color.LightGray
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("الصفحة السابقة ◀", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Button(
+                            onClick = {
+                                if (currentPage < totalPages - 1) {
+                                    currentPage++
+                                }
+                            },
+                            enabled = currentPage < totalPages - 1,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1B5E20),
+                                disabledContainerColor = Color.LightGray
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("الصفحة التالية ▶", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
                     }
                 }
             }
@@ -6076,6 +6946,445 @@ fun AddHabitDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
                         Text("إنشاء")
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun HabitDetailScreen(
+    habit: Habit,
+    viewModel: HayatyViewModel,
+    onBack: () -> Unit
+) {
+    var name by remember(habit) { mutableStateOf(habit.name) }
+    var selectedIcon by remember(habit) { mutableStateOf(habit.icon) }
+    var selectedCategory by remember(habit) { mutableStateOf(habit.category) }
+    var durationMinutes by remember(habit) { mutableStateOf(habit.targetDurationMinutes) }
+    var reminderTime by remember(habit) { mutableStateOf(habit.reminderTime ?: "") }
+
+    val isPredictingState by viewModel.isPredictingSolidification.collectAsStateWithLifecycle()
+    val isCurrentlyPredicting = isPredictingState[habit.id] ?: false
+
+    val allLogs by viewModel.allHabitLogs.collectAsStateWithLifecycle()
+    val habitLogs = remember(allLogs, habit) { allLogs.filter { it.habitId == habit.id } }
+
+    val categories = listOf("عام", "عبادة", "رياضة", "تعلم", "صحة", "عمل", "تطوير")
+    val emojis = listOf("📖", "🕌", "💪", "💧", "🥗", "🏃", "😴", "🧠", "☕", "✨", "📝", "💸", "🌳", "🚶", "🧹")
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Top app bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "عودة"
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "تخصيص وتعديل العادة ⚙️",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Icon Selection Section
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "اختر أيقونة العادة 🎨",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Large Preview
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = selectedIcon, fontSize = 36.sp)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Grid of emojis
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            emojis.forEach { emoji ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (selectedIcon == emoji) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.surface
+                                        )
+                                        .clickable { selectedIcon = emoji }
+                                        .testTag("emoji_$emoji"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = emoji, fontSize = 20.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Customize Attributes Section
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Text(
+                            text = "معلومات العادة الأساسية 📝",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("اسم العادة") },
+                            modifier = Modifier.fillMaxWidth().testTag("edit_habit_name_input"),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        // Category Chips
+                        Column {
+                            Text(
+                                text = "تصنيف العادة المتكررة:",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                categories.forEach { cat ->
+                                    val isSel = selectedCategory == cat
+                                    FilterChip(
+                                        selected = isSel,
+                                        onClick = { selectedCategory = cat },
+                                        label = { Text(cat) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Duration/Timing Targets
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "توقيت المدة (مستهدف الممارسة اليومي):",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "$durationMinutes دقيقة",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Slider(
+                                value = durationMinutes.toFloat(),
+                                onValueChange = { durationMinutes = it.toInt() },
+                                valueRange = 1f..120f,
+                                steps = 24
+                            )
+                        }
+
+                        // Reminder Time Text input
+                        OutlinedTextField(
+                            value = reminderTime,
+                            onValueChange = { reminderTime = it },
+                            label = { Text("وقت التذكير اليومي (مثال: 08:30 ص)") },
+                            modifier = Modifier.fillMaxWidth().testTag("edit_habit_reminder_input"),
+                            shape = RoundedCornerShape(12.dp),
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Default.Schedule, contentDescription = "توقيت")
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Continuity / Streak section
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Whatshot,
+                                contentDescription = "استمرارية",
+                                tint = Color(0xFFFF6D00),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "مستوى استمراريتك بالعلاقة ⚡",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "${habit.streak}",
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFF6D00)
+                                )
+                                Text(
+                                    text = "اليومي المتتالي",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "${habitLogs.size}",
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "إجمالي تكرار الإنجاز",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "سجل آخر 7 أيام من العادة:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Draw last 7 days checklist
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                            val displaySdf = SimpleDateFormat("E", Locale("ar"))
+                            (0..6).reversed().forEach { daysAgo ->
+                                val cal = Calendar.getInstance()
+                                cal.add(Calendar.DAY_OF_YEAR, -daysAgo)
+                                val dateStr = sdf.format(cal.time)
+                                val dayName = displaySdf.format(cal.time)
+                                val wasCompleted = habitLogs.any { it.date == dateStr }
+
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = dayName, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (wasCompleted) Color(0xFF4CAF50)
+                                                else MaterialTheme.colorScheme.surfaceVariant
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (wasCompleted) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "مكتمل",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        } else {
+                                            Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // AI Solidification Predict Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "مستشار الذكاء الاصطناعي",
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "مستشار الذكاء الاصطناعي لتثبيت العادات 🧠✨",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+
+                        Text(
+                            text = "المدة المتوقعة للتثبيت (التحول لعادة راسخة تلقائياً):",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        )
+
+                        Text(
+                            text = "${habit.aiExpectedDays} يوماً من المتابعة 📈",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+
+                        Text(
+                            text = habit.aiExplanation ?: "اضغط على زر تحديث التحليل بالأسفل ليقوم مستشار الذكاء الاصطناعي بتحليل الأهداف وتقديم نصيحة للتغلب على التكاسل وموائمة الخطة الزمنية.",
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+
+                        Button(
+                            onClick = { viewModel.triggerAiSolidificationPrediction(habit) },
+                            enabled = !isCurrentlyPredicting,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                            modifier = Modifier.fillMaxWidth().testTag("ai_solidify_predict_btn"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isCurrentlyPredicting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onTertiary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("جاري فحص العادة مع الذكاء الاصطناعي...")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "تحليل",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("تحليلات الذكاء الاصطناعي للتثبيت 🧠")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save Buttons
+            item {
+                Button(
+                    onClick = {
+                        val updated = habit.copy(
+                            name = name,
+                            icon = selectedIcon,
+                            category = selectedCategory,
+                            targetDurationMinutes = durationMinutes,
+                            reminderTime = reminderTime.ifBlank { null }
+                        )
+                        viewModel.updateHabit(updated)
+                        onBack()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("save_habit_btn"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("حفظ التخصيص والعودة ✅", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }

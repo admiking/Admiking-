@@ -56,6 +56,10 @@ class HayatyRepository(
         return habitDao.insertHabit(habit)
     }
 
+    suspend fun updateHabit(habit: Habit) {
+        habitDao.updateHabit(habit)
+    }
+
     suspend fun deleteHabit(habitId: Int) {
         habitDao.deleteHabitById(habitId)
     }
@@ -65,6 +69,10 @@ class HayatyRepository(
     fun getLogsForDate(date: String): Flow<List<HabitLog>> = habitDao.getLogsForDate(date)
 
     val allHabitLogs: Flow<List<HabitLog>> = habitDao.getAllHabitLogs()
+
+    suspend fun insertHabitLog(log: HabitLog) {
+        habitDao.insertHabitLog(log)
+    }
 
     suspend fun toggleHabitCompletion(habit: Habit, date: String, isCompleted: Boolean) {
         if (isCompleted) {

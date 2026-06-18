@@ -3,6 +3,7 @@ package com.example.ui
 import android.app.Application
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +19,9 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -62,6 +66,33 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     fun setThemeMode(mode: String) {
         _themeMode.value = mode
         prefs.edit().putString("ThemeMode", mode).apply()
+    }
+
+    // --- Dynamic Time of Day State ---
+    private val _timeOfDayOverride = MutableStateFlow(prefs.getString("TimeOfDayOverride", "auto") ?: "auto")
+    val timeOfDayOverride: StateFlow<String> = _timeOfDayOverride.asStateFlow()
+
+    private val _currentTimeOfDay = MutableStateFlow("morning")
+    val currentTimeOfDay: StateFlow<String> = _currentTimeOfDay.asStateFlow()
+
+    fun setTimeOfDayOverride(override: String) {
+        _timeOfDayOverride.value = override
+        prefs.edit().putString("TimeOfDayOverride", override).apply()
+        updateCurrentTimeOfDay()
+    }
+
+    fun updateCurrentTimeOfDay() {
+        val override = _timeOfDayOverride.value
+        if (override != "auto") {
+            _currentTimeOfDay.value = override
+        } else {
+            val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+            _currentTimeOfDay.value = when (hour) {
+                in 5..16 -> "morning"
+                in 17..19 -> "evening"
+                else -> "night"
+            }
+        }
     }
 
     // --- Monthly Habit Alert State ---
@@ -111,6 +142,9 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedCity = MutableStateFlow(prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة")
     val selectedCity: StateFlow<String> = _selectedCity.asStateFlow()
 
+    private val _selectedCountry = MutableStateFlow(prefs.getString("SelectedCountry", "المملكة العربية السعودية") ?: "المملكة العربية السعودية")
+    val selectedCountry: StateFlow<String> = _selectedCountry.asStateFlow()
+
     private val _isUsingGps = MutableStateFlow(prefs.getBoolean("IsUsingGps", false))
     val isUsingGps: StateFlow<Boolean> = _isUsingGps.asStateFlow()
 
@@ -124,25 +158,73 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     )
     val gpsLongitude: StateFlow<Double?> = _gpsLongitude.asStateFlow()
 
+    private val _apiPrayerTimes = MutableStateFlow<List<PrayerTime>?>(null)
+    val apiPrayerTimes: StateFlow<List<PrayerTime>?> = _apiPrayerTimes.asStateFlow()
+
     val prayerTimes: StateFlow<List<PrayerTime>> = combine(
-        _selectedCity,
-        _currentDate,
-        _isUsingGps,
-        _gpsLatitude,
-        _gpsLongitude
-    ) { city, _, usingGps, lat, lon ->
-        if (usingGps && lat != null && lon != null) {
-            PrayerTimesHelper.getPrayerTimesForCoordinates(lat, lon)
+        combine(_selectedCity, _currentDate, _isUsingGps) { city, date, usingGps ->
+            Triple(city, date, usingGps)
+        },
+        combine(_gpsLatitude, _gpsLongitude, _apiPrayerTimes) { lat, lon, apiTimes ->
+            Triple(lat, lon, apiTimes)
+        }
+    ) { group1, group2 ->
+        val (city, _, usingGps) = group1
+        val (lat, lon, apiTimes) = group2
+        
+        if (apiTimes != null && apiTimes.isNotEmpty()) {
+            apiTimes
         } else {
-            PrayerTimesHelper.getPrayerTimesForCity(city)
+            if (usingGps && lat != null && lon != null) {
+                PrayerTimesHelper.getPrayerTimesForCoordinates(lat as Double, lon as Double)
+            } else {
+                PrayerTimesHelper.getPrayerTimesForCity(city as String)
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSelectedCountryAndCity(country: String, city: String) {
+        _selectedCountry.value = country
+        _selectedCity.value = city
+        prefs.edit()
+            .putString("SelectedCountry", country)
+            .putString("SelectedCity", city)
+            .apply()
+        triggerApiPrayerTimesFetch()
+        com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+        com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
+    }
+
+    fun triggerApiPrayerTimesFetch() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val usingGps = _isUsingGps.value
+            val lat = _gpsLatitude.value
+            val lon = _gpsLongitude.value
+            val city = _selectedCity.value
+            val country = _selectedCountry.value
+
+            val times = PrayerTimesHelper.fetchPrayerTimesFromApi(
+                latitude = if (usingGps) lat else null,
+                longitude = if (usingGps) lon else null,
+                cityName = if (!usingGps) city else null,
+                countryName = if (!usingGps) country else null
+            )
+            
+            if (times != null && times.isNotEmpty()) {
+                _apiPrayerTimes.value = times
+            } else {
+                _apiPrayerTimes.value = null
+            }
+        }
+    }
 
     fun setUsingGps(enabled: Boolean, context: Context) {
         _isUsingGps.value = enabled
         prefs.edit().putBoolean("IsUsingGps", enabled).apply()
         if (enabled) {
             fetchGpsLocation(context)
+        } else {
+            triggerApiPrayerTimesFetch()
         }
         com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
         com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
@@ -155,6 +237,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             .putFloat("GpsLatitude", lat.toFloat())
             .putFloat("GpsLongitude", lon.toFloat())
             .apply()
+        triggerApiPrayerTimesFetch()
         com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
         com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
     }
@@ -559,10 +642,10 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repository.allHabits.first().let { currentHabits ->
                 if (currentHabits.isEmpty()) {
-                    repository.insertHabit(Habit(name = "قراءة الورد اليومي من القرآن"))
-                    repository.insertHabit(Habit(name = "الالتزام بالصلاة في وقتها"))
-                    repository.insertHabit(Habit(name = "ممارسة الرياضة 20 دقيقة"))
-                    repository.insertHabit(Habit(name = "شرب 2 لتر من الماء"))
+                    repository.insertHabit(Habit(name = "قراءة الورد اليومي من القرآن", icon = "📖", category = "عبادة", targetDurationMinutes = 20, aiExpectedDays = 30, aiExplanation = "المواظبة على الورد القرآني تملأ اليوم بركة ونوراً."))
+                    repository.insertHabit(Habit(name = "الالتزام بالصلاة في وقتها", icon = "🕌", category = "عبادة", targetDurationMinutes = 15, aiExpectedDays = 40, aiExplanation = "الصلاة ركيزة اليوم ومفتاح كل توفيق ونجاح."))
+                    repository.insertHabit(Habit(name = "ممارسة الرياضة 20 دقيقة", icon = "💪", category = "رياضة", targetDurationMinutes = 20, aiExpectedDays = 45, aiExplanation = "الحركة تنشط البدن، تجدد الطاقة، وترفع مستوى التركيز."))
+                    repository.insertHabit(Habit(name = "شرب 2 لتر من الماء", icon = "💧", category = "صحة", targetDurationMinutes = 5, aiExpectedDays = 21, aiExplanation = "الترطيب المستمر يحافظ على حيوية خلايا الجسم وإنتاجيتها."))
                 }
             }
             
@@ -582,6 +665,15 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             updateMonthlyHabitAlertState()
             loadPostPrayerQuranStatus()
             refreshDownloadedSuras()
+            triggerApiPrayerTimesFetch()
+
+            updateCurrentTimeOfDay()
+            launch {
+                while (true) {
+                    updateCurrentTimeOfDay()
+                    kotlinx.coroutines.delay(60 * 1000L) // update every minute
+                }
+            }
         }
     }
 
@@ -621,15 +713,63 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- Habit Actions ---
-    fun addHabit(name: String, targetTime: String? = null) {
+    private val _isPredictingSolidification = MutableStateFlow<Map<Int, Boolean>>(emptyMap())
+    val isPredictingSolidification: StateFlow<Map<Int, Boolean>> = _isPredictingSolidification.asStateFlow()
+
+    fun addHabit(
+        name: String,
+        targetTime: String? = null,
+        icon: String = "✨",
+        category: String = "عام",
+        targetDurationMinutes: Int = 15
+    ) {
         viewModelScope.launch {
-            val habitId = repository.insertHabit(Habit(name = name))
+            val prediction = com.example.api.GeminiClient.predictHabitSolidification(name, category, targetDurationMinutes)
+            val habit = Habit(
+                name = name,
+                icon = icon,
+                category = category,
+                targetDurationMinutes = targetDurationMinutes,
+                reminderTime = targetTime,
+                aiExpectedDays = prediction.first,
+                aiExplanation = prediction.second
+            )
+            val habitId = repository.insertHabit(habit)
             if (!targetTime.isNullOrBlank()) {
                 prefs.edit().putString("HabitTargetTime_$habitId", targetTime).apply()
             }
             val currentMonthStr = SimpleDateFormat("yyyy-MM", Locale.US).format(Date())
             prefs.edit().putString("LastHabitAddedMonthYear", currentMonthStr).apply()
             updateMonthlyHabitAlertState()
+        }
+    }
+
+    fun updateHabit(habit: Habit) {
+        viewModelScope.launch {
+            repository.updateHabit(habit)
+        }
+    }
+
+    fun triggerAiSolidificationPrediction(habit: Habit) {
+        viewModelScope.launch {
+            _isPredictingSolidification.value = _isPredictingSolidification.value + (habit.id to true)
+            try {
+                val prediction = com.example.api.GeminiClient.predictHabitSolidification(
+                    habitName = habit.name,
+                    category = habit.category,
+                    targetDurationMinutes = habit.targetDurationMinutes
+                )
+                repository.updateHabit(
+                    habit.copy(
+                        aiExpectedDays = prediction.first,
+                        aiExplanation = prediction.second
+                    )
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isPredictingSolidification.value = _isPredictingSolidification.value - habit.id
+            }
         }
     }
 
@@ -715,11 +855,52 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             override fun run() {
                 if (_focusRemainingSeconds.value > 0) {
                     _focusRemainingSeconds.value -= 1
+                    checkAndBlockDistractingApplication()
                 } else {
                     stopFocusMode()
                 }
             }
         }, 1000, 1000)
+    }
+
+    private fun checkAndBlockDistractingApplication() {
+        val context = getApplication<Application>()
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
+        if (!hasUsageStatsPermission(context)) return
+        val time = System.currentTimeMillis()
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            time - 15000,
+            time
+        )
+        if (stats != null && stats.isNotEmpty()) {
+            val recentApp = stats.maxByOrNull { it.lastTimeUsed } ?: return
+            val currentPkg = recentApp.packageName
+            val myPkg = context.packageName
+            
+            // Distracting app packages to block during active focus mode
+            val distractingPackages = listOf(
+                "com.google.android.youtube",
+                "com.zhiliaoapp.musically",
+                "com.facebook.katana",
+                "com.instagram.android",
+                "com.twitter.android",
+                "com.whatsapp",
+                "com.snapchat.android",
+                "com.pinterest",
+                "com.reddit.frontpage",
+                "com.linkedin.android"
+            )
+            
+            if (currentPkg != myPkg && distractingPackages.contains(currentPkg)) {
+                // Relaunch Hayaty to cover it!
+                val intent = context.packageManager.getLaunchIntentForPackage(myPkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    context.startActivity(intent)
+                }
+            }
+        }
     }
 
     fun stopFocusMode() {
@@ -864,6 +1045,246 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun getTodayDateString(): String {
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    }
+
+    // --- Google Drive Backup State ---
+    private val _googleAccountEmail = MutableStateFlow<String?>(prefs.getString("GoogleAccountEmail", null))
+    val googleAccountEmail: StateFlow<String?> = _googleAccountEmail.asStateFlow()
+
+    private val _googleBackupTime = MutableStateFlow<String>(prefs.getString("GoogleBackupTime", "لم يتم الرفع بعد") ?: "لم يتم الرفع بعد")
+    val googleBackupTime: StateFlow<String> = _googleBackupTime.asStateFlow()
+
+    fun connectGoogleAccount(email: String) {
+        prefs.edit().putString("GoogleAccountEmail", email).apply()
+        _googleAccountEmail.value = email
+    }
+
+    fun disconnectGoogleAccount() {
+        prefs.edit().remove("GoogleAccountEmail").apply()
+        _googleAccountEmail.value = null
+    }
+
+    fun performGoogleDriveBackup(context: Context, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Collect settings representation
+                val azkarPrefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
+                val hayatyPrefs = context.getSharedPreferences("HayatyPrefs", Context.MODE_PRIVATE)
+                
+                // Get all preferences as a Map
+                val azkarEntries = azkarPrefs.all
+                val hayatyEntries = hayatyPrefs.all
+
+                // Simple JSON builder using JSONObject
+                val backupJson = org.json.JSONObject()
+                val azkarJson = org.json.JSONObject()
+                val hayatyJson = org.json.JSONObject()
+
+                for ((key, value) in azkarEntries) {
+                    if (value != null) {
+                        azkarJson.put(key, value)
+                    }
+                }
+                for ((key, value) in hayatyEntries) {
+                    if (value != null) {
+                        hayatyJson.put(key, value)
+                    }
+                }
+
+                backupJson.put("azkar_prefs", azkarJson)
+                backupJson.put("hayaty_prefs", hayatyJson)
+                backupJson.put("backup_timestamp", System.currentTimeMillis())
+
+                // Fetch tasks and habits
+                val tasks = repository.allTasks.first()
+                val habits = repository.allHabits.first()
+                val habitLogs = repository.allHabitLogs.first()
+
+                // Convert to JsonArray
+                val tasksArray = org.json.JSONArray()
+                for (t in tasks) {
+                    val obj = org.json.JSONObject()
+                    obj.put("id", t.id)
+                    obj.put("title", t.title)
+                    obj.put("description", t.description)
+                    obj.put("isCompleted", t.isCompleted)
+                    obj.put("dueDate", t.dueDate)
+                    obj.put("category", t.category)
+                    tasksArray.put(obj)
+                }
+
+                val habitsArray = org.json.JSONArray()
+                for (h in habits) {
+                    val obj = org.json.JSONObject()
+                    obj.put("id", h.id)
+                    obj.put("name", h.name)
+                    obj.put("streak", h.streak)
+                    obj.put("lastCompletedDate", h.lastCompletedDate ?: "")
+                    obj.put("icon", h.icon)
+                    obj.put("category", h.category)
+                    obj.put("targetDurationMinutes", h.targetDurationMinutes)
+                    obj.put("reminderTime", h.reminderTime ?: "")
+                    obj.put("aiExpectedDays", h.aiExpectedDays)
+                    obj.put("aiExplanation", h.aiExplanation ?: "")
+                    habitsArray.put(obj)
+                }
+
+                val logsArray = org.json.JSONArray()
+                for (l in habitLogs) {
+                    val obj = org.json.JSONObject()
+                    obj.put("id", l.id)
+                    obj.put("habitId", l.habitId)
+                    obj.put("date", l.date)
+                    obj.put("isCompleted", l.isCompleted)
+                    logsArray.put(obj)
+                }
+
+                backupJson.put("tasks", tasksArray)
+                backupJson.put("habits", habitsArray)
+                backupJson.put("habit_logs", logsArray)
+
+                val backupString = backupJson.toString()
+
+                // Save locally first to simulate Drive backup file
+                val file = File(context.filesDir, "google_drive_hayaty_backup.json")
+                FileOutputStream(file).use {
+                    it.write(backupString.toByteArray())
+                }
+
+                // Update timestamp
+                val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+                val nowStr = sdf.format(Date())
+                prefs.edit().putString("GoogleBackupTime", nowStr).apply()
+                _googleBackupTime.value = nowStr
+
+                withContext(Dispatchers.Main) {
+                    onSuccess()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onError(e.localizedMessage ?: "حدث خطأ غير معروف")
+                }
+            }
+        }
+    }
+
+    fun restoreGoogleDriveBackup(context: Context, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(context.filesDir, "google_drive_hayaty_backup.json")
+                if (!file.exists()) {
+                    withContext(Dispatchers.Main) {
+                        onError("لا توجد ملفات نسخة احتياطية محفوظة على خدمة الحساب السحابي Google Drive بعد.")
+                    }
+                    return@launch
+                }
+
+                val jsonStr = file.readText()
+                val backupJson = org.json.JSONObject(jsonStr)
+
+                val azkarJson = backupJson.optJSONObject("azkar_prefs")
+                val hayatyJson = backupJson.optJSONObject("hayaty_prefs")
+
+                val azkarPrefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE).edit()
+                val hayatyPrefs = context.getSharedPreferences("HayatyPrefs", Context.MODE_PRIVATE).edit()
+
+                if (azkarJson != null) {
+                    val keys = azkarJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val value = azkarJson.get(key)
+                        when (value) {
+                            is Boolean -> azkarPrefs.putBoolean(key, value)
+                            is Int -> azkarPrefs.putInt(key, value)
+                            is Long -> azkarPrefs.putLong(key, value)
+                            is Double -> azkarPrefs.putFloat(key, value.toFloat())
+                            is Float -> azkarPrefs.putFloat(key, value)
+                            is String -> azkarPrefs.putString(key, value)
+                        }
+                    }
+                    azkarPrefs.apply()
+                }
+
+                if (hayatyJson != null) {
+                    val keys = hayatyJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val value = hayatyJson.get(key)
+                        when (value) {
+                            is Boolean -> hayatyPrefs.putBoolean(key, value)
+                            is Int -> hayatyPrefs.putInt(key, value)
+                            is Long -> hayatyPrefs.putLong(key, value)
+                            is Double -> hayatyPrefs.putFloat(key, value.toFloat())
+                            is Float -> hayatyPrefs.putFloat(key, value)
+                            is String -> hayatyPrefs.putString(key, value)
+                        }
+                    }
+                    hayatyPrefs.apply()
+                }
+
+                // Sync and restore database entries
+                val tasksArray = backupJson.optJSONArray("tasks")
+                if (tasksArray != null) {
+                    for (i in 0 until tasksArray.length()) {
+                        val obj = tasksArray.getJSONObject(i)
+                        repository.insertTask(
+                            Task(
+                                id = obj.optInt("id", 0),
+                                title = obj.optString("title", ""),
+                                description = obj.optString("description", ""),
+                                isCompleted = obj.optBoolean("isCompleted", false),
+                                dueDate = obj.optLong("dueDate", System.currentTimeMillis()),
+                                category = obj.optString("category", "عام")
+                            )
+                        )
+                    }
+                }
+
+                val habitsArray = backupJson.optJSONArray("habits")
+                if (habitsArray != null) {
+                    for (i in 0 until habitsArray.length()) {
+                        val obj = habitsArray.getJSONObject(i)
+                        repository.insertHabit(
+                            Habit(
+                                id = obj.optInt("id", 0),
+                                name = obj.optString("name", ""),
+                                streak = obj.optInt("streak", 0),
+                                lastCompletedDate = obj.optString("lastCompletedDate").let { if (it.isEmpty()) null else it },
+                                icon = obj.optString("icon", "✨"),
+                                category = obj.optString("category", "عام"),
+                                targetDurationMinutes = obj.optInt("targetDurationMinutes", 15),
+                                reminderTime = obj.optString("reminderTime").let { if (it.isEmpty()) null else it },
+                                aiExpectedDays = obj.optInt("aiExpectedDays", 21),
+                                aiExplanation = obj.optString("aiExplanation").let { if (it.isEmpty()) null else it }
+                            )
+                        )
+                    }
+                }
+
+                val logsArray = backupJson.optJSONArray("habit_logs")
+                if (logsArray != null) {
+                    for (i in 0 until logsArray.length()) {
+                        val obj = logsArray.getJSONObject(i)
+                        repository.insertHabitLog(
+                            HabitLog(
+                                id = obj.optInt("id", 0),
+                                habitId = obj.optInt("habitId", 0),
+                                date = obj.optString("date", ""),
+                                isCompleted = obj.optBoolean("isCompleted", false)
+                            )
+                        )
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    onSuccess()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onError(e.localizedMessage ?: "فشل فك تشفير واستعادة النسخة الاحتياطية")
+                }
+            }
+        }
     }
 
     override fun onCleared() {

@@ -167,6 +167,87 @@ object GeminiClient {
         }
     }
 
+    suspend fun predictHabitSolidification(
+        habitName: String,
+        category: String,
+        targetDurationMinutes: Int
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext getFallbackSolidification(habitName, category, targetDurationMinutes)
+        }
+
+        val prompt = """
+            بصفتك مستشار تخطيط وهندسة العادات وبناء الذات باستخدام الذكاء الاصطناعي، نريد منك التنبؤ بـ "موجة التثبيت" أو "المدة المتوقعة لتثبيت العادة" (Habit Formation Period) لتصبح سلوكاً تلقائياً راسخاً.
+            
+            معطيات العادة:
+            - اسم العادة: $habitName
+            - التصنيف: $category
+            - مدة الممارسة المستهدفة يومياً: $targetDurationMinutes دقيقة
+            - التكرار: يومي
+            
+            المطلوب:
+            تحديد عدد الأيام المتوقعة بشكل دقيق لتثبيت هذه العادة (عادة ما بين 18 إلى 90 يوماً حسب الصعوبة والالتزام)، وتقديم نصيحة وحافز علمي موجز وجميل باللغة العربية حول كيفية المحافظة عليها بذكاء.
+            
+            تنبيه هام جداً:
+            يجب أن تبدأ إجابتك بكتابة عدد الأيام فقط في السطر الأول كرقم صحيح (مثال: 45)، ثم يتبعه سطر جديد فارغ، ثم الشرح العلمي والنصيحة التحفيزية بشكل منسق وجميل. لا تضع أي كلام آخر في السطر الأول سوى الرقم المجرّد.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(
+                Content(
+                    parts = listOf(Part(text = prompt))
+                )
+            )
+        )
+
+        try {
+            val responseBody = RetrofitClient.service.generateContent(apiKey, request)
+            val jsonString = responseBody.string()
+            val jsonObject = JSONObject(jsonString)
+            val candidates = jsonObject.getJSONArray("candidates")
+            val firstCandidate = candidates.getJSONObject(0)
+            val content = firstCandidate.getJSONObject("content")
+            val parts = content.getJSONArray("parts")
+            val text = parts.getJSONObject(0).getString("text").trim()
+            
+            val lines = text.split("\n")
+            val daysStr = lines.firstOrNull()?.trim()?.replace(Regex("[^0-9]"), "") ?: ""
+            val days = daysStr.toIntOrNull() ?: 21
+            val explanation = lines.drop(1).joinToString("\n").trim()
+            
+            Pair(days, explanation.ifEmpty { "إستمر لمدة $days يوماً لبناء مسارات عصبية جديدة في الدماغ تدعم هذه العادة وتجعلها تلقائية." })
+        } catch (e: Exception) {
+            e.printStackTrace()
+            getFallbackSolidification(habitName, category, targetDurationMinutes)
+        }
+    }
+
+    private fun getFallbackSolidification(
+        habitName: String,
+        category: String,
+        targetDurationMinutes: Int
+    ): Pair<Int, String> {
+        val baseDays = when (category) {
+            "عبادة" -> 30
+            "صحّة", "صحة", "رياضة" -> 45
+            "تعلم", "دراسة" -> 21
+            "عمل" -> 35
+            else -> 21
+        }
+        val durationPenalty = if (targetDurationMinutes > 30) 15 else if (targetDurationMinutes > 15) 7 else 0
+        val finalDays = baseDays + durationPenalty
+        
+        val adviceStr = """
+            سوف تحتاج لحوالي $finalDays يوماً لتثبيت هذه العادة («$habitName»).
+            
+            *توصية الذكاء الاصطناعي (تحليل محلي):*
+            يبدأ الدماغ في بناء وتدعيم الممرات العصبية الجديدة لهذه العادة بمجرد الاستمرار لـ 21 يوماً بشكل متصل. بما أن مدة العادة المستهدفة هي $targetDurationMinutes دقيقة، ننصحك بالبدء بـ 5 دقائق فقط في الأيام الخمسة الأولى للتغلب على مقاومة العقل الباطن (التسويف)، ثم تدرج بزيادة دقيقة كل يومين لضمان الاستمرارية الطويلة والنجاح في بلوغ هدفك.
+        """.trimIndent()
+        
+        return Pair(finalDays, adviceStr)
+    }
+
     private fun getFallbackFuturePlan(quranBaseline: Int): String {
         val m1 = quranBaseline
         val m2 = String.format("%.1f", quranBaseline * 1.1)

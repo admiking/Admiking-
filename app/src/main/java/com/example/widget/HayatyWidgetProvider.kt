@@ -124,10 +124,11 @@ private suspend fun updateAppWidget(
 ) {
     val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
     val city = prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة"
+    val isUsingGps = prefs.getBoolean("IsUsingGps", false)
     val widgetTasbihCount = prefs.getInt("WidgetTasbihCount", 0)
 
     // 1. Calculate next prayer
-    val nextPrayer = getNextPrayerTime(city)
+    val nextPrayer = getNextPrayerTime(context)
 
     // 2. Query nearest task from Room Database
     val db = AppDatabase.getDatabase(context)
@@ -136,7 +137,8 @@ private suspend fun updateAppWidget(
 
     // 3. Build Remote Views
     val views = RemoteViews(context.packageName, R.layout.hayaty_widget)
-    views.setTextViewText(R.id.widget_location, "$city 📍")
+    val displayLocation = if (isUsingGps) "موقعي الحالي 📍" else "$city 📍"
+    views.setTextViewText(R.id.widget_location, displayLocation)
     views.setTextViewText(R.id.widget_prayer_name, nextPrayer.first)
     views.setTextViewText(R.id.widget_prayer_time, nextPrayer.second)
 
@@ -196,17 +198,31 @@ private fun toArabicDigits(number: Int): String {
     return number.toString().map { if (it.isDigit()) arabicDigits[it - '0'] else it }.joinToString("")
 }
 
-private fun getNextPrayerTime(city: String): Pair<String, String> {
+private fun getNextPrayerTime(context: Context): Pair<String, String> {
+    val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
+    val city = prefs.getString("SelectedCity", "مكة المكرمة") ?: "مكة المكرمة"
+    val isUsingGps = prefs.getBoolean("IsUsingGps", false)
+    val lat = if (prefs.contains("GpsLatitude")) prefs.getFloat("GpsLatitude", 0f).toDouble() else null
+    val lon = if (prefs.contains("GpsLongitude")) prefs.getFloat("GpsLongitude", 0f).toDouble() else null
+
     val now = Calendar.getInstance()
     val sdf = SimpleDateFormat("HH:mm", Locale.US)
     val currentTimeStr = sdf.format(now.time)
 
-    val todayTimes = PrayerTimesHelper.getPrayerTimesForCity(city, now.time)
+    val todayTimes = if (isUsingGps && lat != null && lon != null) {
+        PrayerTimesHelper.getPrayerTimesForCoordinates(lat, lon, now.time)
+    } else {
+        PrayerTimesHelper.getPrayerTimesForCity(city, now.time)
+    }
 
     var nextPrayer = todayTimes.firstOrNull { it.time > currentTimeStr }
     if (nextPrayer == null) {
         val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-        val tomorrowTimes = PrayerTimesHelper.getPrayerTimesForCity(city, tomorrow.time)
+        val tomorrowTimes = if (isUsingGps && lat != null && lon != null) {
+            PrayerTimesHelper.getPrayerTimesForCoordinates(lat, lon, tomorrow.time)
+        } else {
+            PrayerTimesHelper.getPrayerTimesForCity(city, tomorrow.time)
+        }
         val tomorrowFajr = tomorrowTimes.firstOrNull { it.name == "Fajr" } ?: tomorrowTimes.first()
         return Pair("الفجر صباحاً", "غداً ${formatTimeToTwelveHour(tomorrowFajr.time)}")
     }
