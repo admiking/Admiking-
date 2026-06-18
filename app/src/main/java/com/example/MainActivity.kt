@@ -147,6 +147,23 @@ fun HayatyApp(viewModel: HayatyViewModel) {
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(NavItem.HOME) }
     
+    LaunchedEffect(Unit) {
+        viewModel.loadInstalledApps(context)
+        viewModel.launchAppEvent.collect { packageName ->
+            try {
+                val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    context.startActivity(intent)
+                } else {
+                    android.widget.Toast.makeText(context, "تنبيه: التطبيق المرتبط غير مثبت على هذا الجهاز.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "خطأ أثناء محاولة تشغيل التطبيق.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
     val isFocusActive by viewModel.isFocusActive.collectAsStateWithLifecycle()
     val focusSeconds by viewModel.focusRemainingSeconds.collectAsStateWithLifecycle()
 
@@ -2670,6 +2687,444 @@ fun HabitsScreen(viewModel: HayatyViewModel) {
             }
         }
 
+        // --- FIREBASE FIRESTORE CLOUD DATABASE HUB ---
+        item {
+            val firestoreTasks by viewModel.firestoreTasks.collectAsStateWithLifecycle()
+            val firestoreHabits by viewModel.firestoreHabits.collectAsStateWithLifecycle()
+            val firestoreDailySchedules by viewModel.firestoreDailySchedules.collectAsStateWithLifecycle()
+            val isFirestoreLoading by viewModel.isFirestoreLoading.collectAsStateWithLifecycle()
+            val firestoreStatus by viewModel.firestoreStatusMessage.collectAsStateWithLifecycle()
+
+            var activeDialogType by remember { mutableStateOf<String?>(null) } // "task", "habit", "schedule"
+            var showFirestoreStatusToast by remember { mutableStateOf(false) }
+
+            LaunchedEffect(firestoreStatus) {
+                if (firestoreStatus != null) {
+                    showFirestoreStatusToast = true
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .testTag("firestore_cloud_hub_card"),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔥", fontSize = 22.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "قاعدة بيانات Firebase Firestore ☁️",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                             )
+                        }
+
+                        if (isFirestoreLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "إدارة البيانات السحابية مباشرة. يمكنك إضافة وعرض وتعديل وحذف المهام، العادات والجدول اليومي على Firestore بكثافة متناهية.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+
+                    if (firestoreStatus != null && showFirestoreStatusToast) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = firestoreStatus ?: "",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { 
+                                        viewModel.clearFirestoreStatus()
+                                        showFirestoreStatusToast = false
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "اغلاق", modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // --- SYNC CONTROLS ---
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.syncLocalDatabaseToFirestore() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = "رفع", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("مزامنة للكل سحابياً 📤", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { viewModel.syncFirestoreToLocalDatabase() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = "تنزيل", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("استيراد من السحاب 📥", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Button(
+                        onClick = { viewModel.fetchFirestoreData() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                        elevation = null
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("تحديث وجلب بيانات Firestore 🔄", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                    // --- TABS FOR CLOUD VIEW ---
+                    var cloudTab by remember { mutableStateOf(0) } // 0: Tasks, 1: Habits, 2: Schedules
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        listOf("📝 المهام", "✨ العادات", "🗓️ الجدول").forEachIndexed { index, title ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (cloudTab == index) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                    .clickable { cloudTab = index }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = title,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (cloudTab == index) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // --- DISPLAY AND CRUD LISTINGS ---
+                    when (cloudTab) {
+                        0 -> {
+                            // CLOUD TASKS LISTING
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("المهام السحابية في Firestore (${firestoreTasks.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                IconButton(onClick = { activeDialogType = "task" }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Add, contentDescription = "اضافة", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+
+                            if (firestoreTasks.isEmpty()) {
+                                Text("لا يوجد مهام في السحاب حالياً. اضغط على الزر أعلاه لإضافة أول مهمة سحابية.", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    firestoreTasks.forEach { task ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                                .padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Text(text = task.description.ifEmpty { "لا يوجد وصف" }, fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                            }
+                                            Row {
+                                                IconButton(
+                                                    onClick = { viewModel.updateFirestoreTask(task.copy(isCompleted = !task.isCompleted)) },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (task.isCompleted) Icons.Default.Check else Icons.Default.Circle,
+                                                        contentDescription = "تحويل",
+                                                        tint = if (task.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { viewModel.deleteFirestoreTask(task.id) },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        1 -> {
+                            // CLOUD HABITS LISTING
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                             ) {
+                                 Text("العادات السحابية في Firestore (${firestoreHabits.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                 IconButton(onClick = { activeDialogType = "habit" }, modifier = Modifier.size(24.dp)) {
+                                     Icon(Icons.Default.Add, contentDescription = "اضافة", tint = MaterialTheme.colorScheme.primary)
+                                 }
+                             }
+
+                             if (firestoreHabits.isEmpty()) {
+                                 Text("لا يوجد عادات في السحاب حالياً. اضغط على زر (+) في الأعلى للبدء.", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                             } else {
+                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                     firestoreHabits.forEach { habit ->
+                                         Row(
+                                             modifier = Modifier
+                                                 .fillMaxWidth()
+                                                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                                 .padding(8.dp),
+                                             verticalAlignment = Alignment.CenterVertically,
+                                             horizontalArrangement = Arrangement.SpaceBetween
+                                         ) {
+                                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                                 Text(text = habit.icon, fontSize = 18.sp)
+                                                 Spacer(modifier = Modifier.width(6.dp))
+                                                 Column {
+                                                     Text(text = habit.name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                     Text(text = "سلسلة الالتزام: ${habit.streak} يوم 🔥", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                                 }
+                                             }
+                                             Row {
+                                                 IconButton(
+                                                     onClick = { viewModel.updateFirestoreHabit(habit.copy(streak = habit.streak + 1)) },
+                                                     modifier = Modifier.size(24.dp)
+                                                 ) {
+                                                     Icon(Icons.Default.Star, contentDescription = "زيادة السلسلة", tint = MaterialTheme.colorScheme.primary)
+                                                 }
+                                                 IconButton(
+                                                     onClick = { viewModel.deleteFirestoreHabit(habit.id) },
+                                                     modifier = Modifier.size(24.dp)
+                                                 ) {
+                                                     Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
+                                                 }
+                                             }
+                                         }
+                                     }
+                                 }
+                             }
+                         }
+                         2 -> {
+                             // CLOUD DAILY SCHEDULES LISTING
+                             Row(
+                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                 verticalAlignment = Alignment.CenterVertically,
+                                 modifier = Modifier.fillMaxWidth()
+                             ) {
+                                 Text("الجدول اليومي السحابي في Firestore (${firestoreDailySchedules.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                 IconButton(onClick = { activeDialogType = "schedule" }, modifier = Modifier.size(24.dp)) {
+                                     Icon(Icons.Default.Add, contentDescription = "اضافة", tint = MaterialTheme.colorScheme.primary)
+                                 }
+                             }
+
+                             if (firestoreDailySchedules.isEmpty()) {
+                                 Text("لا يوجد جدول زمني في السحاب حالياً. اضغط على الزر أعلاه لإضافة حجز أو موعد.", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                             } else {
+                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                     firestoreDailySchedules.forEach { schedule ->
+                                         Row(
+                                             modifier = Modifier
+                                                 .fillMaxWidth()
+                                                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                                 .padding(8.dp),
+                                             verticalAlignment = Alignment.CenterVertically,
+                                             horizontalArrangement = Arrangement.SpaceBetween
+                                         ) {
+                                             Column(modifier = Modifier.weight(1f)) {
+                                                 Text(text = schedule.title, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                                     Icon(Icons.Default.Schedule, contentDescription = "وقت", modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.outline)
+                                                     Spacer(modifier = Modifier.width(4.dp))
+                                                     Text(text = "${schedule.timeSlot} | ${schedule.note}", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                                 }
+                                             }
+                                             IconButton(
+                                                 onClick = { viewModel.deleteFirestoreDailySchedule(schedule.id) },
+                                                 modifier = Modifier.size(24.dp)
+                                             ) {
+                                                 Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
+                                             }
+                                         }
+                                     }
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+
+             // --- POPUP DIALOGS FOR CLOUD CRUD CREATION ---
+             if (activeDialogType != null) {
+                 AlertDialog(
+                     onDismissRequest = { activeDialogType = null },
+                     title = {
+                         Text(
+                             text = when (activeDialogType) {
+                                 "task" -> "إضافة مهمة سحابية 📝"
+                                 "habit" -> "إضافة عادة سحابية ✨"
+                                 else -> "إضافة جدول سحابي 🗓️"
+                             },
+                             fontSize = 16.sp,
+                             fontWeight = FontWeight.Bold
+                         )
+                     },
+                     text = {
+                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                             var titleInput by remember { mutableStateOf("") }
+                             var descInput by remember { mutableStateOf("") }
+                             var timeInput by remember { mutableStateOf("") }
+                             var extraInput by remember { mutableStateOf("") }
+
+                             when (activeDialogType) {
+                                 "task" -> {
+                                     OutlinedTextField(
+                                         value = titleInput,
+                                         onValueChange = { titleInput = it },
+                                         label = { Text("أسم المهمة") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                     OutlinedTextField(
+                                         value = descInput,
+                                         onValueChange = { descInput = it },
+                                         label = { Text("تفاصيل/وصف") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                 }
+                                 "habit" -> {
+                                     OutlinedTextField(
+                                         value = titleInput,
+                                         onValueChange = { titleInput = it },
+                                         label = { Text("أسم العادة") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                     OutlinedTextField(
+                                         value = descInput,
+                                         onValueChange = { descInput = it },
+                                         label = { Text("الأيقونة (مثال: 🏃‍♂️)") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                 }
+                                 "schedule" -> {
+                                     OutlinedTextField(
+                                         value = titleInput,
+                                         onValueChange = { titleInput = it },
+                                         label = { Text("عنوان الموعد/الجدول") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                     OutlinedTextField(
+                                         value = timeInput,
+                                         onValueChange = { timeInput = it },
+                                         label = { Text("التوقيت السحابي (مثال: 10:00 - 11:30)") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                     OutlinedTextField(
+                                         value = extraInput,
+                                         onValueChange = { extraInput = it },
+                                         label = { Text("ملاحظة إضافية") },
+                                         singleLine = true,
+                                         modifier = Modifier.fillMaxWidth()
+                                     )
+                                 }
+                             }
+
+                             Spacer(modifier = Modifier.height(8.dp))
+
+                             Row(
+                                 modifier = Modifier.fillMaxWidth(),
+                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
+                             ) {
+                                 Button(
+                                     onClick = {
+                                         if (titleInput.isNotBlank()) {
+                                             when (activeDialogType) {
+                                                 "task" -> viewModel.addFirestoreTask(titleInput, descInput, "عام", false)
+                                                 "habit" -> viewModel.addFirestoreHabit(titleInput, descInput.ifBlank { "✨" }, "عام", 15)
+                                                 "schedule" -> viewModel.addFirestoreDailySchedule(titleInput, timeInput, "", extraInput)
+                                             }
+                                             activeDialogType = null
+                                         }
+                                     },
+                                     modifier = Modifier.weight(1f)
+                                 ) {
+                                     Text("تأكيد وحفظ ☁️")
+                                 }
+                                 
+                                 OutlinedButton(
+                                     onClick = { activeDialogType = null },
+                                     modifier = Modifier.weight(1f)
+                                 ) {
+                                     Text("إلغاء")
+                                 }
+                             }
+                         }
+                     },
+                     confirmButton = {}
+                 )
+             }
+         }
+
         // --- RADIAL COMMITMENT CHART ---
         item {
             val progress = if (habits.isNotEmpty()) logs.size.toFloat() / habits.size.toFloat() else 0f
@@ -4152,6 +4607,7 @@ fun QuranScreen(viewModel: HayatyViewModel) {
     val haptic = LocalHapticFeedback.current
     
     var selectedSura by remember { mutableStateOf<Sura?>(null) }
+    var targetFirstVerseIndex by remember { mutableStateOf<Int?>(null) }
     val prayerTimes by viewModel.prayerTimes.collectAsStateWithLifecycle()
     val selectedCity by viewModel.selectedCity.collectAsStateWithLifecycle()
 
@@ -4206,7 +4662,15 @@ fun QuranScreen(viewModel: HayatyViewModel) {
     }
 
     if (selectedSura != null) {
-        QuranReaderScreen(sura = selectedSura!!, viewModel = viewModel, onBack = { selectedSura = null })
+        QuranReaderScreen(
+            sura = selectedSura!!,
+            viewModel = viewModel,
+            initialTargetVerseIndex = targetFirstVerseIndex,
+            onBack = { 
+                selectedSura = null
+                targetFirstVerseIndex = null
+            }
+        )
     } else {
         Column(
             modifier = Modifier
@@ -4273,6 +4737,30 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                 when (activeTab) {
                     0 -> { // ---------------------- TAB 0: QURAN LIST ----------------------
                         var searchQuery by remember { mutableStateOf("") }
+                        var searchMode by remember { mutableStateOf(0) } // 0 = Sura names, 1 = Verse Content
+                        val loadedSuraVerses by viewModel.loadedSuraVerses.collectAsStateWithLifecycle()
+
+                        val allLoadedVerses = remember(loadedSuraVerses) {
+                            val list = mutableListOf<Triple<Sura, Int, String>>() // Sura, VerseIndex, VerseText
+                            QuranData.suras.forEach { sura ->
+                                val verses = if (sura.verses.isNotEmpty()) sura.verses else (loadedSuraVerses[sura.id] ?: emptyList())
+                                verses.forEachIndexed { vIdx, verse ->
+                                    list.add(Triple(sura, vIdx, verse))
+                                }
+                            }
+                            list
+                        }
+
+                        val matchedVerses = remember(searchQuery, allLoadedVerses) {
+                            if (searchQuery.trim().length < 2) {
+                                emptyList<Triple<Sura, Int, String>>()
+                            } else {
+                                val queryNorm = normalizeArabic(searchQuery)
+                                allLoadedVerses.filter { (_, _, verse) ->
+                                    normalizeArabic(verse).contains(queryNorm)
+                                }
+                            }
+                        }
                         
                         Column(modifier = Modifier.fillMaxSize()) {
                             // Sura Search Bar
@@ -4300,33 +4788,18 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                                 )
                             )
                             
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            // Reciter Select Title
-                            Text(
-                                text = "اختر القارئ برواية ورش عن نافع للتحميل والاستماع:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
+                            Spacer(modifier = Modifier.height(6.dp))
 
-                            val reciterOptions = listOf(
-                                "الشيخ محمود خليل الحصري (ورش)",
-                                "الشيخ ياسين الجزائري (ورش)",
-                                "الشيخ عبد الباسط عبد الصمد (ورش)"
-                            )
-                            
-                            // Reciters selection chip bar (Horizontal scroll)
-                            LazyRow(
+                            // Dual Search Mode Selector Chips
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                items(reciterOptions) { reciter ->
-                                    val isSelected = reciter == selectedReciterName
-                                    val shortName = reciter.replace(" (ورش)", "")
+                                listOf("البحث في السور 📖" to 0, "البحث في الآيات المحملة 🔍" to 1).forEach { (label, mode) ->
+                                    val isSelected = searchMode == mode
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
@@ -4335,13 +4808,13 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                                                 else MaterialTheme.colorScheme.surfaceVariant
                                             )
                                             .clickable {
-                                                viewModel.setSelectedReciter(reciter)
+                                                searchMode = mode
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                            .padding(horizontal = 14.dp, vertical = 6.dp)
                                     ) {
                                         Text(
-                                            text = shortName,
+                                            text = label,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -4351,185 +4824,390 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                             }
                             
                             Spacer(modifier = Modifier.height(10.dp))
-                            
-                            // Filter suras list by search query
-                            val filteredSuras = remember(searchQuery) {
-                                QuranData.suras.filter { sura ->
-                                    searchQuery.isEmpty() ||
-                                    sura.name.contains(searchQuery) ||
-                                    sura.englishName.contains(searchQuery, ignoreCase = true) ||
-                                    sura.id.toString() == searchQuery.trim()
-                                }
-                            }
-                            
-                            LazyColumn(
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                            ) {
-                                items(filteredSuras) { sura ->
-                                    val isDownloaded = downloadedSuras[sura.id] == true
-                                    val progress = downloadProgress[sura.id]
-                                    val isPlaying = playingSuraId == sura.id
-                                    
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { selectedSura = sura },
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                                             else MaterialTheme.colorScheme.surface
-                                        ),
-                                        border = if (isPlaying) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+
+                            if (searchMode == 0) {
+                                // Reciter Select Title
+                                Text(
+                                    text = "اختر القارئ برواية ورش عن نافع للتحميل والاستماع:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+
+                                val reciterOptions = listOf(
+                                    "الشيخ محمود خليل الحصري (ورش)",
+                                    "الشيخ ياسين الجزائري (ورش)",
+                                    "الشيخ عبد الباسط عبد الصمد (ورش)"
+                                )
+                                
+                                // Reciters selection chip bar (Horizontal scroll)
+                                LazyRow(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    items(reciterOptions) { reciter ->
+                                        val isSelected = reciter == selectedReciterName
+                                        val shortName = reciter.replace(" (ورش)", "")
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                                .clickable {
+                                                    viewModel.setSelectedReciter(reciter)
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                }
+                                                .padding(horizontal = 12.dp, vertical = 6.dp)
                                         ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                // Sura ID indicator Badge
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(34.dp)
-                                                        .background(
-                                                            if (isPlaying) MaterialTheme.colorScheme.primary
-                                                            else MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                                                            CircleShape
-                                                        ),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        text = "${sura.id}",
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isPlaying) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.secondary
-                                                    )
-                                                }
-                                                
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                
-                                                Column {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(
-                                                            text = "سورة ${sura.name}",
-                                                            fontSize = 14.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = MaterialTheme.colorScheme.onSurface
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        // Warsh indicator tag
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                                                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        ) {
-                                                            Text("ورش", fontSize = 8.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
-                                                        }
-                                                    }
-                                                    Spacer(modifier = Modifier.height(2.dp))
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(
-                                                            text = "${sura.versesCount} آية • ${sura.type}",
-                                                            fontSize = 11.sp,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            
-                                            // Action controls side
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                // Download button
-                                                if (progress != null) {
-                                                    // Currently downloading
-                                                    Box(
-                                                        modifier = Modifier.size(32.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        CircularProgressIndicator(
-                                                            progress = progress / 100f,
-                                                            color = MaterialTheme.colorScheme.primary,
-                                                            strokeWidth = 2.dp,
-                                                            modifier = Modifier.size(24.dp)
-                                                        )
-                                                        Text("$progress%", fontSize = 7.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                                    }
-                                                } else if (isDownloaded) {
-                                                    // Downloaded, click to delete
-                                                    IconButton(
-                                                        onClick = {
-                                                            viewModel.deleteSuraAudio(sura.id)
-                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Delete,
-                                                            contentDescription = "حذف المقطع الصوتي",
-                                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                                            modifier = Modifier.size(18.dp)
-                                                        )
-                                                    }
-                                                } else {
-                                                    // Not downloaded, click to download
-                                                    IconButton(
-                                                        onClick = {
-                                                            viewModel.downloadSuraAudio(sura.id)
-                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.ArrowDownward,
-                                                            contentDescription = "تحميل الصوت",
-                                                            tint = MaterialTheme.colorScheme.primary,
-                                                            modifier = Modifier.size(18.dp)
-                                                        )
-                                                    }
-                                                }
-                                                
-                                                // Quick Play / Pause Button
-                                                IconButton(
-                                                    onClick = {
-                                                        viewModel.playSuraAudio(sura.id)
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = if (isPlaying && isAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                        contentDescription = "تشغيل التلاوة",
-                                                        tint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
-                                                }
-                                            }
+                                            Text(
+                                                text = shortName,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
                                     }
                                 }
                                 
-                                if (filteredSuras.isEmpty()) {
-                                    item {
-                                        Box(
+                                Spacer(modifier = Modifier.height(10.dp))
+                                
+                                // Filter suras list by search query
+                                val filteredSuras = remember(searchQuery) {
+                                    QuranData.suras.filter { sura ->
+                                        searchQuery.isEmpty() ||
+                                        sura.name.contains(searchQuery) ||
+                                        sura.englishName.contains(searchQuery, ignoreCase = true) ||
+                                        sura.id.toString() == searchQuery.trim()
+                                    }
+                                }
+                                
+                                LazyColumn(
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                ) {
+                                    items(filteredSuras) { sura ->
+                                        val isDownloaded = downloadedSuras[sura.id] == true
+                                        val progress = downloadProgress[sura.id]
+                                        val isPlaying = playingSuraId == sura.id
+                                        
+                                        Card(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(24.dp),
-                                            contentAlignment = Alignment.Center
+                                                .clickable { selectedSura = sura },
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                                                 else MaterialTheme.colorScheme.surface
+                                            ),
+                                            border = if (isPlaying) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
                                         ) {
-                                            Text(
-                                                text = "لا توجد نتائج بحث مطابقة لـ \"$searchQuery\"",
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.outline
-                                            )
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    // Sura ID indicator Badge
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(34.dp)
+                                                            .background(
+                                                                if (isPlaying) MaterialTheme.colorScheme.primary
+                                                                else MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                                                                CircleShape
+                                                            ),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "${sura.id}",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isPlaying) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.secondary
+                                                        )
+                                                    }
+                                                    
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    
+                                                    Column {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text(
+                                                                text = "سورة ${sura.name}",
+                                                                fontSize = 14.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            // Warsh indicator tag
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            ) {
+                                                                Text("ورش", fontSize = 8.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text(
+                                                                text = "${sura.versesCount} آية • ${sura.type}",
+                                                                fontSize = 11.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                // Action controls side
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    // Download button
+                                                    if (progress != null) {
+                                                        // Currently downloading
+                                                        Box(
+                                                            modifier = Modifier.size(32.dp),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            CircularProgressIndicator(
+                                                                progress = progress / 100f,
+                                                                color = MaterialTheme.colorScheme.primary,
+                                                                strokeWidth = 2.dp,
+                                                                modifier = Modifier.size(24.dp)
+                                                            )
+                                                            Text("$progress%", fontSize = 7.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    } else if (isDownloaded) {
+                                                        // Downloaded, click to delete
+                                                        IconButton(
+                                                            onClick = {
+                                                                viewModel.deleteSuraAudio(sura.id)
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            },
+                                                            modifier = Modifier.size(32.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Delete,
+                                                                contentDescription = "حذف المقطع الصوتي",
+                                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
+                                                        }
+                                                    } else {
+                                                        // Not downloaded, click to download
+                                                        IconButton(
+                                                            onClick = {
+                                                                viewModel.downloadSuraAudio(sura.id)
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            },
+                                                            modifier = Modifier.size(32.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.ArrowDownward,
+                                                                contentDescription = "تحميل الصوت",
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    
+                                                    // Quick Play / Pause Button
+                                                    IconButton(
+                                                        onClick = {
+                                                            viewModel.playSuraAudio(sura.id)
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = if (isPlaying && isAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                            contentDescription = "تشغيل التلاوة",
+                                                            tint = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (filteredSuras.isEmpty()) {
+                                        item {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(24.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "لا توجد نتائج بحث مطابقة لـ \"$searchQuery\"",
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.outline
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Verse Content Search Mode
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "معلومات",
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "يبحث هذا الوضع في جميع الآيات المحملة محلياً (مثل الفاتحة والكهف وأي سورة قمت بفتحها مسبقاً).",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            lineHeight = 14.sp,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+
+                                if (searchQuery.trim().length < 2) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "يرجى إدخال حرفين على الأقل للبحث في الآيات...",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                } else if (matchedVerses.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "لم يتم العثور على أي آية مطابقة لـ \"$searchQuery\"",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "نتائج البحث الأقرب لمطابقتك:",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = " تم العثور على ${matchedVerses.size} آية",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    LazyColumn(
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f)
+                                    ) {
+                                        items(matchedVerses) { (sura, verseIdx, verseText) ->
+                                            Card(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        // Navigate directly to this Sura and highlight the verse!
+                                                        selectedSura = sura
+                                                        targetFirstVerseIndex = verseIdx
+                                                    },
+                                                shape = RoundedCornerShape(12.dp),
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                            ) {
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "سورة ${sura.name}",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = MaterialTheme.colorScheme.primary
+                                                                )
+                                                            }
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Text(
+                                                                text = "الآية ${verseIdx + 1}",
+                                                                fontSize = 9.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                        
+                                                        Icon(
+                                                            imageVector = Icons.Default.ArrowBack,
+                                                            contentDescription = "قراءة الآية",
+                                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                                        HighlightedQuranText(
+                                                            text = verseText.trim(),
+                                                            query = searchQuery,
+                                                            style = androidx.compose.ui.text.TextStyle(
+                                                                fontSize = 14.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontFamily = FontFamily.Serif,
+                                                                color = MaterialTheme.colorScheme.onSurface,
+                                                                lineHeight = 22.sp
+                                                            ),
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -5467,7 +6145,12 @@ fun QuranScreen(viewModel: HayatyViewModel) {
 }
 
 @Composable
-fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit) {
+fun QuranReaderScreen(
+    sura: Sura,
+    viewModel: HayatyViewModel,
+    initialTargetVerseIndex: Int? = null,
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
     val loadedSuraVerses by viewModel.loadedSuraVerses.collectAsStateWithLifecycle()
     val isLoadingVerses by viewModel.isLoadingVerses.collectAsStateWithLifecycle()
@@ -5476,6 +6159,8 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
     val versesList = if (sura.verses.isNotEmpty()) sura.verses else (loadedSuraVerses[sura.id] ?: emptyList())
 
     var readerMode by remember { mutableStateOf(0) } // 0 = standard text, 1 = yousefheiba website
+    var inSuraSearchQuery by remember { mutableStateOf("") }
+    var isSearchExpanded by remember { mutableStateOf(false) }
 
     // Fetch verses if list is empty and we aren't already loading
     LaunchedEffect(sura.id) {
@@ -5520,18 +6205,35 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
                 )
             }
             
-            // Play audio directly in the reader header! Extremely practical!
+            // Play audio and Search control directly in the reader header! Extremely practical!
             val playingSuraId by viewModel.playingSuraId.collectAsStateWithLifecycle()
             val isAudioPlaying by viewModel.isAudioPlaying.collectAsStateWithLifecycle()
             
-            IconButton(
-                onClick = { viewModel.playSuraAudio(sura.id) }
-            ) {
-                Icon(
-                    imageVector = if (playingSuraId == sura.id && isAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "تشغيل الصوت",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { 
+                        isSearchExpanded = !isSearchExpanded
+                        if (!isSearchExpanded) {
+                            inSuraSearchQuery = ""
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (isSearchExpanded) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = "بحث في السورة",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+
+                IconButton(
+                    onClick = { viewModel.playSuraAudio(sura.id) }
+                ) {
+                    Icon(
+                        imageVector = if (playingSuraId == sura.id && isAudioPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "تشغيل الصوت",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
             }
         }
 
@@ -5552,6 +6254,40 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
                 onClick = { readerMode = 1 },
                 text = { Text("مصحف يوسف هيبة الإلكتروني 🌐", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
             )
+        }
+
+        if (isSearchExpanded && readerMode == 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF1ECE4))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                OutlinedTextField(
+                    value = inSuraSearchQuery,
+                    onValueChange = { inSuraSearchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("insura_search_field"),
+                    placeholder = { Text("بحث عن كلمة أو عبارة في سورة ${sura.name}...", fontSize = 12.sp, color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, "بحث", tint = Color.Gray, modifier = Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (inSuraSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { inSuraSearchQuery = "" }) {
+                                Icon(Icons.Default.Close, "مسح", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.LightGray
+                    )
+                )
+            }
         }
 
         if (readerMode == 1) {
@@ -5625,11 +6361,31 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
             } else {
                 val versesPerPage = 8
                 val totalPages = (versesList.size + versesPerPage - 1) / versesPerPage
-                var currentPage by remember(sura.id) { mutableStateOf(0) }
+                
+                val initialPage = remember(sura.id, initialTargetVerseIndex) {
+                    if (initialTargetVerseIndex != null && initialTargetVerseIndex in 0 until versesList.size) {
+                        initialTargetVerseIndex / versesPerPage
+                    } else {
+                        0
+                    }
+                }
+                var currentPage by remember(sura.id, initialPage) { mutableStateOf(initialPage) }
+                var highlightedVerseIndex by remember(sura.id, initialTargetVerseIndex) { mutableStateOf(initialTargetVerseIndex) }
 
                 val pageStart = currentPage * versesPerPage
                 val pageEnd = minOf(pageStart + versesPerPage, versesList.size)
                 val pageVerses = versesList.subList(pageStart, pageEnd)
+
+                // Match in-sura verses
+                val matchedInSuraVerses = remember(inSuraSearchQuery, versesList) {
+                    if (inSuraSearchQuery.trim().length < 2) {
+                        emptyList<Pair<Int, String>>()
+                    } else {
+                        val queryNorm = normalizeArabic(inSuraSearchQuery)
+                        versesList.mapIndexed { idx, verse -> idx to verse }
+                            .filter { (_, verse) -> normalizeArabic(verse).contains(queryNorm) }
+                    }
+                }
 
                 Column(
                     modifier = Modifier
@@ -5643,17 +6399,27 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = "سورة ${sura.name} - الصفحة ${currentPage + 1} من $totalPages",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF9E782F),
-                            textAlign = TextAlign.Center
-                        )
+                        if (inSuraSearchQuery.isNotEmpty()) {
+                            Text(
+                                text = "نتائج البحث في سورة ${sura.name}: تم العثور على ${matchedInSuraVerses.size} آية",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF9E782F),
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                text = "سورة ${sura.name} - الصفحة ${currentPage + 1} من $totalPages",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF9E782F),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         
-                        // Centered Basmalah on the very first page of appropriate surahs
-                        if (currentPage == 0 && sura.id != 1 && sura.id != 9) {
+                        // Centered Basmalah on the very first page of appropriate surahs (only if not searching)
+                        if (currentPage == 0 && sura.id != 1 && sura.id != 9 && inSuraSearchQuery.isEmpty()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -5672,7 +6438,7 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
                         }
                     }
 
-                    // Main Quran Page content
+                    // Main Quran Page content or Search results inside Surah
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -5687,91 +6453,184 @@ fun QuranReaderScreen(sura: Sura, viewModel: HayatyViewModel, onBack: () -> Unit
                                 .fillMaxSize()
                                 .padding(16.dp)
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState()),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                // Rich concatenated flowing text
-                                val annotatedText = buildAnnotatedString {
-                                    pageVerses.forEachIndexed { relativeIndex, verse ->
-                                        val absoluteIndex = pageStart + relativeIndex + 1
-                                        withStyle(style = SpanStyle(
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Serif,
-                                            color = Color(0xFF1B5E20)
-                                        )) {
-                                            append(verse.trim())
+                            if (inSuraSearchQuery.isNotEmpty()) {
+                                if (inSuraSearchQuery.trim().length < 2) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "يرجى كتابة حرفين على الأقل للبحث...",
+                                            fontSize = 13.sp,
+                                            color = Color.Gray,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                } else if (matchedInSuraVerses.isEmpty()) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "لم يتم العثور على نتائج مطابقة لـ \"$inSuraSearchQuery\"",
+                                            fontSize = 13.sp,
+                                            color = Color.Gray,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(matchedInSuraVerses) { (index, verse) ->
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color(0xFFF1ECE4).copy(alpha = 0.4f))
+                                                    .clickable {
+                                                        // Click to navigate directly to the page containing this verse!
+                                                        currentPage = index / versesPerPage
+                                                        highlightedVerseIndex = index
+                                                        inSuraSearchQuery = ""
+                                                        isSearchExpanded = false
+                                                    }
+                                                    .padding(10.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .background(Color(0xFFD4AF37).copy(alpha = 0.2f), shape = CircleShape)
+                                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "آية ${index + 1}",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF9E782F)
+                                                        )
+                                                    }
+                                                    
+                                                    Icon(
+                                                        imageVector = Icons.Default.ArrowForward,
+                                                        contentDescription = "انتقال للآية",
+                                                        tint = Color(0xFF1B5E20).copy(alpha = 0.6f),
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                                    HighlightedQuranText(
+                                                        text = verse.trim(),
+                                                        query = inSuraSearchQuery,
+                                                        style = androidx.compose.ui.text.TextStyle(
+                                                            fontSize = 15.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontFamily = FontFamily.Serif,
+                                                            color = Color(0xFF1B5E20),
+                                                            lineHeight = 24.sp
+                                                        ),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    )
+                                                }
+                                            }
                                         }
-                                        append(" ")
-                                        // Custom golden inline verse circle index: ﴿١﴾
-                                        withStyle(style = SpanStyle(
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = Color(0xFFD4AF37)
-                                        )) {
-                                            append(" ﴿$absoluteIndex﴾ ")
-                                        }
-                                        append(" ")
                                     }
                                 }
-
-                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                                    Text(
-                                        text = annotatedText,
-                                        textAlign = TextAlign.Justify,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        lineHeight = 44.sp
-                                    )
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState()),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    // Rich concatenated flowing text
+                                    val annotatedText = buildAnnotatedString {
+                                        pageVerses.forEachIndexed { relativeIndex, verse ->
+                                            val absoluteIndex = pageStart + relativeIndex + 1
+                                            val isHighlighted = (absoluteIndex - 1) == highlightedVerseIndex
+                                            withStyle(style = SpanStyle(
+                                                fontSize = 20.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Serif,
+                                                color = if (isHighlighted) Color(0xFFD84315) else Color(0xFF1B5E20),
+                                                background = if (isHighlighted) Color(0xFFFFCCBC).copy(alpha = 0.5f) else Color.Transparent
+                                            )) {
+                                                append(verse.trim())
+                                            }
+                                            append(" ")
+                                            // Custom golden inline verse circle index: ﴿١﴾
+                                            withStyle(style = SpanStyle(
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isHighlighted) Color(0xFFD84315) else Color(0xFFD4AF37)
+                                            )) {
+                                                append(" ﴿$absoluteIndex﴾ ")
+                                            }
+                                            append(" ")
+                                        }
+                                    }
+                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                        Text(
+                                            text = annotatedText,
+                                            textAlign = TextAlign.Justify,
+                                            modifier = Modifier.fillMaxWidth().clickable {
+                                                // Tapping on page clears the active highlight safely:
+                                                highlightedVerseIndex = null
+                                            },
+                                            lineHeight = 44.sp
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Paging control bar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = {
-                                if (currentPage > 0) {
-                                    currentPage--
-                                }
-                            },
-                            enabled = currentPage > 0,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1B5E20),
-                                disabledContainerColor = Color.LightGray
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                    // Paging control bar (only show if not searching)
+                    if (inSuraSearchQuery.isEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("الصفحة السابقة ◀", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                        
-                        Spacer(modifier = Modifier.width(16.dp))
+                            Button(
+                                onClick = {
+                                    if (currentPage > 0) {
+                                        currentPage--
+                                        highlightedVerseIndex = null // Clear highlight when changing page so it's not confusing
+                                    }
+                                },
+                                enabled = currentPage > 0,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1B5E20),
+                                    disabledContainerColor = Color.LightGray
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("الصفحة السابقة ◀", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            
+                            Spacer(modifier = Modifier.width(16.dp))
 
-                        Button(
-                            onClick = {
-                                if (currentPage < totalPages - 1) {
-                                    currentPage++
-                                }
-                            },
-                            enabled = currentPage < totalPages - 1,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1B5E20),
-                                disabledContainerColor = Color.LightGray
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("الصفحة التالية ▶", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Button(
+                                onClick = {
+                                    if (currentPage < totalPages - 1) {
+                                        currentPage++
+                                        highlightedVerseIndex = null // Clear highlight when changing page so it's not confusing
+                                    }
+                                },
+                                enabled = currentPage < totalPages - 1,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1B5E20),
+                                    disabledContainerColor = Color.LightGray
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("الصفحة التالية ▶", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                     }
                 }
@@ -6963,6 +7822,7 @@ fun HabitDetailScreen(
     var selectedCategory by remember(habit) { mutableStateOf(habit.category) }
     var durationMinutes by remember(habit) { mutableStateOf(habit.targetDurationMinutes) }
     var reminderTime by remember(habit) { mutableStateOf(habit.reminderTime ?: "") }
+    var targetAppPackage by remember(habit) { mutableStateOf(habit.targetAppPackage ?: "") }
 
     val isPredictingState by viewModel.isPredictingSolidification.collectAsStateWithLifecycle()
     val isCurrentlyPredicting = isPredictingState[habit.id] ?: false
@@ -7359,6 +8219,189 @@ fun HabitDetailScreen(
                 }
             }
 
+            // App Linkage Section
+            item {
+                val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+                var appSearchQuery by remember { mutableStateOf("") }
+                var isExpanded by remember { mutableStateOf(false) }
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Launch,
+                                contentDescription = "فتح تطبيق آخر",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ربط العادة بفتح تطبيق آخر عند الإنجاز 📲",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Text(
+                            text = "عند وضع علامة صح (إكمال العادة)، سيقوم التطبيق تلقائياً بفتح التطبيق المحدد لمساعدتك على المتابعة والالتزام مباشرة (مثل تطبيق قرآن، أو مفكرة، أو تواصل).",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 16.sp
+                        )
+
+                        // Current Picked App Label
+                        val selectedAppLabel = remember(targetAppPackage, installedApps) {
+                            installedApps.find { it.packageName == targetAppPackage }?.label ?: targetAppPackage
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .clickable { isExpanded = !isExpanded }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (targetAppPackage.isBlank()) "لا يوجد تطبيق مرتبط حالياً" else "التطبيق المرتبط: $selectedAppLabel",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (targetAppPackage.isBlank()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                                )
+                                if (targetAppPackage.isNotBlank()) {
+                                    Text(
+                                        text = targetAppPackage,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                            
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (targetAppPackage.isNotBlank()) {
+                                    IconButton(
+                                        onClick = { 
+                                            targetAppPackage = "" 
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "إلغاء الربط",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = "عرض الخيارات",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (isExpanded) {
+                            OutlinedTextField(
+                                value = appSearchQuery,
+                                onValueChange = { appSearchQuery = it },
+                                label = { Text("بحث في التطبيقات المثبتة 🔍") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                singleLine = true
+                            )
+
+                            val filteredApps = remember(appSearchQuery, installedApps) {
+                                installedApps.filter { 
+                                    it.label.contains(appSearchQuery, ignoreCase = true) || 
+                                    it.packageName.contains(appSearchQuery, ignoreCase = true)
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                                    .align(Alignment.CenterHorizontally)
+                            ) {
+                                if (filteredApps.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "لم يتم العثور على أي تطبيق يتطابق مع البحث",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        items(filteredApps) { appInfo ->
+                                            val isSelected = appInfo.packageName == targetAppPackage
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(
+                                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                                        else MaterialTheme.colorScheme.surface
+                                                    )
+                                                    .clickable {
+                                                        targetAppPackage = appInfo.packageName
+                                                        isExpanded = false
+                                                    }
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(
+                                                            if (isSelected) MaterialTheme.colorScheme.primary
+                                                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                                            CircleShape
+                                                        )
+                                                )
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column {
+                                                    Text(
+                                                        text = appInfo.label,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = appInfo.packageName,
+                                                        fontSize = 9.sp,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Save Buttons
             item {
                 Button(
@@ -7368,7 +8411,8 @@ fun HabitDetailScreen(
                             icon = selectedIcon,
                             category = selectedCategory,
                             targetDurationMinutes = durationMinutes,
-                            reminderTime = reminderTime.ifBlank { null }
+                            reminderTime = reminderTime.ifBlank { null },
+                            targetAppPackage = targetAppPackage.ifBlank { null }
                         )
                         viewModel.updateHabit(updated)
                         onBack()
@@ -7389,5 +8433,99 @@ fun HabitDetailScreen(
         }
     }
 }
+
+// ==========================================
+// QURAN SEARCH UTILITIES & COMPONENTS
+// ==========================================
+
+fun normalizeArabic(text: String): String {
+    val diacritics = Regex("[\u064B-\u065F\u0670]")
+    var normalized = text.replace(diacritics, "")
+    normalized = normalized.replace(Regex("[أإآٱ]"), "ا")
+    normalized = normalized.replace("ة", "ه")
+    normalized = normalized.replace("ى", "ي")
+    return normalized.trim()
+}
+
+fun highlightMultipleWords(
+    originalText: String,
+    query: String,
+    highlightColor: Color = Color(0xFFD4AF37)
+): androidx.compose.ui.text.AnnotatedString {
+    return buildAnnotatedString {
+        if (query.isEmpty()) {
+            append(originalText)
+            return@buildAnnotatedString
+        }
+
+        val normQuery = normalizeArabic(query)
+        if (normQuery.isEmpty()) {
+            append(originalText)
+            return@buildAnnotatedString
+        }
+
+        val normText = normalizeArabic(originalText)
+        val diacritics = Regex("[\u064B-\u065F\u0670]")
+        val originalIndices = mutableListOf<Int>()
+        for (i in originalText.indices) {
+            val charStr = originalText[i].toString()
+            if (!charStr.matches(diacritics)) {
+                originalIndices.add(i)
+            }
+        }
+
+        val indicesMap = originalIndices.toIntArray()
+        var lastOriginalIdx = 0
+        var normSearchIdx = 0
+
+        while (true) {
+            val startNormIdx = normText.indexOf(normQuery, normSearchIdx)
+            if (startNormIdx == -1) {
+                append(originalText.substring(lastOriginalIdx))
+                break
+            }
+
+            val endNormIdx = startNormIdx + normQuery.length
+
+            if (startNormIdx < indicesMap.size) {
+                val startOriginalIdx = indicesMap[startNormIdx]
+                val endOriginalIdx = if (endNormIdx - 1 < indicesMap.size) {
+                    indicesMap[endNormIdx - 1] + 1
+                } else {
+                    originalText.length
+                }
+
+                if (startOriginalIdx > lastOriginalIdx) {
+                    append(originalText.substring(lastOriginalIdx, startOriginalIdx))
+                }
+
+                withStyle(SpanStyle(background = highlightColor.copy(alpha = 0.35f), fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))) {
+                    append(originalText.substring(startOriginalIdx, endOriginalIdx))
+                }
+
+                lastOriginalIdx = endOriginalIdx
+                normSearchIdx = endNormIdx
+            } else {
+                append(originalText.substring(lastOriginalIdx))
+                break
+            }
+        }
+    }
+}
+
+@Composable
+fun HighlightedQuranText(
+    text: String,
+    query: String,
+    style: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle.Default,
+    highlightColor: Color = Color(0xFFD4AF37),
+    modifier: Modifier = Modifier
+) {
+    val annotatedString = remember(text, query) {
+        highlightMultipleWords(text, query, highlightColor)
+    }
+    Text(text = annotatedString, style = style, modifier = modifier)
+}
+
 
 

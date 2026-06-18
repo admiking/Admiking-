@@ -688,27 +688,45 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     // --- Task Actions ---
     fun addTask(title: String, description: String, dueDate: Long, category: String, isAppointment: Boolean) {
         viewModelScope.launch {
-            repository.insertTask(
-                Task(
-                    title = title,
-                    description = description,
-                    dueDate = dueDate,
-                    category = category,
-                    isAppointment = isAppointment
-                )
+            val task = Task(
+                title = title,
+                description = description,
+                dueDate = dueDate,
+                category = category,
+                isAppointment = isAppointment
             )
+            val insertedId = repository.insertTask(task)
+            // Mirror to Firestore in background
+            try {
+                com.example.util.FirestoreHelper.saveTask(getApplication(), task.copy(id = insertedId.toInt()))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     fun toggleTaskCompletion(task: Task) {
         viewModelScope.launch {
-            repository.updateTask(task.copy(isCompleted = !task.isCompleted))
+            val updatedTask = task.copy(isCompleted = !task.isCompleted)
+            repository.updateTask(updatedTask)
+            // Mirror to Firestore in background
+            try {
+                com.example.util.FirestoreHelper.saveTask(getApplication(), updatedTask)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     fun deleteTask(task: Task) {
         viewModelScope.launch {
             repository.deleteTask(task)
+            // Mirror to Firestore in background
+            try {
+                com.example.util.FirestoreHelper.deleteTask(getApplication(), task.id)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -735,6 +753,12 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                 aiExplanation = prediction.second
             )
             val habitId = repository.insertHabit(habit)
+            // Sync to Firestore in background
+            try {
+                com.example.util.FirestoreHelper.saveHabit(getApplication(), habit.copy(id = habitId.toInt()))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             if (!targetTime.isNullOrBlank()) {
                 prefs.edit().putString("HabitTargetTime_$habitId", targetTime).apply()
             }
@@ -747,6 +771,12 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     fun updateHabit(habit: Habit) {
         viewModelScope.launch {
             repository.updateHabit(habit)
+            // Sync to Firestore in background
+            try {
+                com.example.util.FirestoreHelper.saveHabit(getApplication(), habit)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -759,12 +789,17 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                     category = habit.category,
                     targetDurationMinutes = habit.targetDurationMinutes
                 )
-                repository.updateHabit(
-                    habit.copy(
-                        aiExpectedDays = prediction.first,
-                        aiExplanation = prediction.second
-                    )
+                val updatedHabit = habit.copy(
+                    aiExpectedDays = prediction.first,
+                    aiExplanation = prediction.second
                 )
+                repository.updateHabit(updatedHabit)
+                // Sync to Firestore
+                try {
+                    com.example.util.FirestoreHelper.saveHabit(getApplication(), updatedHabit)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -776,7 +811,44 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteHabit(habitId: Int) {
         viewModelScope.launch {
             repository.deleteHabit(habitId)
+            // Sync to Firestore
+            try {
+                com.example.util.FirestoreHelper.deleteHabit(getApplication(), habitId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             prefs.edit().remove("HabitTargetTime_$habitId").apply()
+        }
+    }
+
+    // App Launch notification for habit completion
+    private val _launchAppEvent = MutableSharedFlow<String>()
+    val launchAppEvent: SharedFlow<String> = _launchAppEvent.asSharedFlow()
+
+    // Installed activities for launcher linkage
+    data class AppInfo(val label: String, val packageName: String)
+    private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
+    val installedApps: StateFlow<List<AppInfo>> = _installedApps.asStateFlow()
+
+    fun loadInstalledApps(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val pm = context.packageManager
+                val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+                val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+                val appsList = resolveInfos.mapNotNull { resolveInfo ->
+                    val packageName = resolveInfo.activityInfo.packageName
+                    val label = resolveInfo.loadLabel(pm).toString()
+                    if (packageName != context.packageName) {
+                        AppInfo(label, packageName)
+                    } else null
+                }.distinctBy { it.packageName }.sortedBy { it.label }
+                _installedApps.value = appsList
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -785,9 +857,28 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             val date = currentDate.value
             val isCompleted = todayHabitLogs.value.none { it.habitId == habit.id }
             repository.toggleHabitCompletion(habit, date, isCompleted)
+            // Sync updated Habit to Firestore in background
+            try {
+                val updatedHabit = if (isCompleted) {
+                    val newStreak = if (habit.lastCompletedDate == null) 1 else habit.streak + 1
+                    habit.copy(streak = newStreak, lastCompletedDate = date)
+                } else {
+                    val newStreak = maxOf(0, habit.streak - 1)
+                    habit.copy(streak = newStreak, lastCompletedDate = null)
+                }
+                com.example.util.FirestoreHelper.saveHabit(getApplication(), updatedHabit)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             if (isCompleted) {
                 val completionTime = SimpleDateFormat("HH:mm", Locale.US).format(Date())
                 prefs.edit().putString("HabitCompletionTime_${habit.id}_$date", completionTime).apply()
+                // Emit targetAppPackage to launch it
+                habit.targetAppPackage?.let { packageName ->
+                    if (packageName.isNotBlank()) {
+                        _launchAppEvent.emit(packageName)
+                    }
+                }
             } else {
                 prefs.edit().remove("HabitCompletionTime_${habit.id}_$date").apply()
             }
@@ -1283,6 +1374,204 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.Main) {
                     onError(e.localizedMessage ?: "فشل فك تشفير واستعادة النسخة الاحتياطية")
                 }
+            }
+        }
+    }
+
+    // --- Firestore Sync & CRUD State ---
+    private val _firestoreTasks = MutableStateFlow<List<Task>>(emptyList())
+    val firestoreTasks: StateFlow<List<Task>> = _firestoreTasks.asStateFlow()
+
+    private val _firestoreHabits = MutableStateFlow<List<Habit>>(emptyList())
+    val firestoreHabits: StateFlow<List<Habit>> = _firestoreHabits.asStateFlow()
+
+    private val _firestoreDailySchedules = MutableStateFlow<List<com.example.util.FirestoreHelper.DailySchedule>>(emptyList())
+    val firestoreDailySchedules: StateFlow<List<com.example.util.FirestoreHelper.DailySchedule>> = _firestoreDailySchedules.asStateFlow()
+
+    private val _isFirestoreLoading = MutableStateFlow(false)
+    val isFirestoreLoading: StateFlow<Boolean> = _isFirestoreLoading.asStateFlow()
+
+    private val _firestoreStatusMessage = MutableStateFlow<String?>(null)
+    val firestoreStatusMessage: StateFlow<String?> = _firestoreStatusMessage.asStateFlow()
+
+    fun clearFirestoreStatus() {
+        _firestoreStatusMessage.value = null
+    }
+
+    fun fetchFirestoreData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            try {
+                val tasks = com.example.util.FirestoreHelper.getTasks(getApplication())
+                val habits = com.example.util.FirestoreHelper.getHabits(getApplication())
+                val schedules = com.example.util.FirestoreHelper.getDailySchedules(getApplication())
+                _firestoreTasks.value = tasks
+                _firestoreHabits.value = habits
+                _firestoreDailySchedules.value = schedules
+                _firestoreStatusMessage.value = "تم جلب البيانات السحابية بنجاح! ☁️"
+            } catch (e: Exception) {
+                _firestoreStatusMessage.value = "خطأ أثناء جلب البيانات: ${e.localizedMessage}"
+            } finally {
+                _isFirestoreLoading.value = false
+            }
+        }
+    }
+
+    fun addFirestoreTask(title: String, description: String, category: String, isAppointment: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            val dummyId = (1000..9999).random()
+            val task = Task(
+                id = dummyId,
+                title = title,
+                description = description,
+                dueDate = System.currentTimeMillis(),
+                category = category,
+                isCompleted = false,
+                isAppointment = isAppointment
+            )
+            com.example.util.FirestoreHelper.saveTask(getApplication(), task)
+            _firestoreStatusMessage.value = "تم إضافة المهمة السحابية بنجاح! ☁️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun updateFirestoreTask(task: Task) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            com.example.util.FirestoreHelper.saveTask(getApplication(), task)
+            _firestoreStatusMessage.value = "تم تحديث المهمة السحابية بنجاح! ☁️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun deleteFirestoreTask(taskId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            com.example.util.FirestoreHelper.deleteTask(getApplication(), taskId)
+            _firestoreStatusMessage.value = "تم حذف المهمة السحابية بنجاح! 🗑️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun addFirestoreHabit(name: String, icon: String, category: String, durationMinutes: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            val dummyId = (1000..9999).random()
+            val habit = Habit(
+                id = dummyId,
+                name = name,
+                icon = icon,
+                category = category,
+                targetDurationMinutes = durationMinutes
+            )
+            com.example.util.FirestoreHelper.saveHabit(getApplication(), habit)
+            _firestoreStatusMessage.value = "تم إضافة العادة السحابية بنجاح! ☁️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun updateFirestoreHabit(habit: Habit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            com.example.util.FirestoreHelper.saveHabit(getApplication(), habit)
+            _firestoreStatusMessage.value = "تم تحديث العادة السحابية بنجاح! ☁️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun deleteFirestoreHabit(habitId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            com.example.util.FirestoreHelper.deleteHabit(getApplication(), habitId)
+            _firestoreStatusMessage.value = "تم حذف العادة السحابية بنجاح! 🗑️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun addFirestoreDailySchedule(title: String, timeSlot: String, date: String, note: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            val schedule = com.example.util.FirestoreHelper.DailySchedule(
+                id = "",
+                title = title,
+                timeSlot = timeSlot,
+                date = date,
+                note = note
+            )
+            com.example.util.FirestoreHelper.saveDailySchedule(getApplication(), schedule)
+            _firestoreStatusMessage.value = "تم إضافة الجدول اليومي السحابي بنجاح! 🗓️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun updateFirestoreDailySchedule(schedule: com.example.util.FirestoreHelper.DailySchedule) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            com.example.util.FirestoreHelper.saveDailySchedule(getApplication(), schedule)
+            _firestoreStatusMessage.value = "تم تحديث الجدول اليومي السحابي بنجاح! 🗓️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun deleteFirestoreDailySchedule(scheduleId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            com.example.util.FirestoreHelper.deleteDailySchedule(getApplication(), scheduleId)
+            _firestoreStatusMessage.value = "تم حذف الجدول اليومي السحابي بنجاح! 🗑️"
+            fetchFirestoreData()
+        }
+    }
+
+    fun syncLocalDatabaseToFirestore() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            _firestoreStatusMessage.value = "جاري رفع ومزامنة البيانات المحلية إلى السحابة... ⏳"
+            try {
+                val tasks = repository.allTasks.first()
+                val habits = repository.allHabits.first()
+                
+                // Save all tasks to Firestore
+                for (task in tasks) {
+                    com.example.util.FirestoreHelper.saveTask(getApplication(), task)
+                }
+
+                // Save all habits to Firestore
+                for (habit in habits) {
+                    com.example.util.FirestoreHelper.saveHabit(getApplication(), habit)
+                }
+
+                _firestoreStatusMessage.value = "تم مزامنة ورفع كافة البيانات وبنجاح! ☁️🚀"
+                fetchFirestoreData()
+            } catch (e: Exception) {
+                _firestoreStatusMessage.value = "فشل المزامنة المتقدمة: ${e.localizedMessage}"
+            } finally {
+                _isFirestoreLoading.value = false
+            }
+        }
+    }
+
+    fun syncFirestoreToLocalDatabase() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFirestoreLoading.value = true
+            _firestoreStatusMessage.value = "جاري جلب واستعادة البيانات من السحابة... ⏳"
+            try {
+                val tasks = com.example.util.FirestoreHelper.getTasks(getApplication())
+                val habits = com.example.util.FirestoreHelper.getHabits(getApplication())
+                
+                for (task in tasks) {
+                    repository.insertTask(task)
+                }
+
+                for (habit in habits) {
+                    repository.insertHabit(habit)
+                }
+
+                _firestoreStatusMessage.value = "تم استعادة كافة البيانات السحابية بنجاح محلياً! 🎉"
+            } catch (e: Exception) {
+                _firestoreStatusMessage.value = "فشل تحميل البيانات محلياً: ${e.localizedMessage}"
+            } finally {
+                _isFirestoreLoading.value = false
             }
         }
     }

@@ -29,7 +29,8 @@ data class Habit(
     val targetDurationMinutes: Int = 15,
     val reminderTime: String? = null, // Format: "HH:mm"
     val aiExpectedDays: Int = 21,
-    val aiExplanation: String? = null
+    val aiExplanation: String? = null,
+    val targetAppPackage: String? = null
 )
 
 @Entity(
@@ -132,7 +133,7 @@ interface AppUsageDao {
 
 @Database(
     entities = [Task::class, Habit::class, HabitLog::class, AppUsageRecord::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
