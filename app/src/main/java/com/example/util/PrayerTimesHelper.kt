@@ -176,6 +176,40 @@ object PrayerTimesHelper {
         cityName: String?,
         countryName: String?
     ): List<PrayerTime>? {
+        // Try Aladhan API first (Standard Public Open API)
+        try {
+            val urlString = if (latitude != null && longitude != null) {
+                "https://api.aladhan.com/v1/timings?latitude=$latitude&longitude=$longitude"
+            } else if (!cityName.isNullOrBlank()) {
+                val encCity = java.net.URLEncoder.encode(cityName, "UTF-8")
+                val encCountry = java.net.URLEncoder.encode(countryName ?: "", "UTF-8")
+                "https://api.aladhan.com/v1/timingsByCity?city=$encCity&country=$encCountry"
+            } else {
+                null
+            }
+
+            if (urlString != null) {
+                val url = java.net.URL(urlString)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 6000
+                connection.readTimeout = 6000
+                connection.useCaches = false
+                
+                val responseCode = connection.responseCode
+                if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                    val responseStr = connection.inputStream.bufferedReader().use { it.readText() }
+                    val result = parsePrayerTimesFromJson(responseStr)
+                    if (result != null && result.isNotEmpty()) {
+                        return result
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Fallback to original custom API
         var connection: java.net.HttpURLConnection? = null
         try {
             val urlBuilder = java.lang.StringBuilder("https://quran.yousefheiba.com/api/getPrayerTimes")

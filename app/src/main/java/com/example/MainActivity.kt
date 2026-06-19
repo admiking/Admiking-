@@ -288,6 +288,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     val isUsingGps by viewModel.isUsingGps.collectAsStateWithLifecycle()
     val gpsLatitude by viewModel.gpsLatitude.collectAsStateWithLifecycle()
     val gpsLongitude by viewModel.gpsLongitude.collectAsStateWithLifecycle()
+    val apiPrayerTimes by viewModel.apiPrayerTimes.collectAsStateWithLifecycle()
 
     val locationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -761,8 +762,8 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     .fillMaxWidth()
                     .testTag("prayer_widget"),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -812,7 +813,58 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // API Status Badge & Refresh Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (apiPrayerTimes != null) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(
+                                        if (apiPrayerTimes != null) Color(0xFF4CAF50)
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        CircleShape
+                                    )
+                            )
+                            Text(
+                                text = if (apiPrayerTimes != null) "جُلب حياً عبر واجهة Aladhan المفتوحة 📡" else "حساب فلكي محلي عالي الدقة 🌙",
+                                fontSize = 10.sp,
+                                color = if (apiPrayerTimes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                viewModel.triggerApiPrayerTimesFetch()
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "تحديث البيانات من الإنترنت",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1384,8 +1436,8 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     .padding(vertical = 4.dp)
                     .testTag("home_habits_widget"),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1613,15 +1665,15 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-                ),
-                border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                    .padding(vertical = 4.dp)
+                    .testTag("home_tasks_widget"),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Header & Active Task Count
@@ -1635,7 +1687,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                 text = "🎯 قائمة المهام اليومية",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                         Text(
@@ -1754,54 +1806,60 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             }
                         }
                     }
-                }
-            }
-        }
 
-        // --- FILTERED TASKS RENDERING LIST ---
-        val filteredTasks = when (activeTaskFilter) {
-            "remaining" -> tasks.filter { !it.isCompleted }
-            "completed" -> tasks.filter { it.isCompleted }
-            else -> tasks
-        }
+                    Spacer(modifier = Modifier.height(4.dp))
 
-        if (filteredTasks.isEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "لا يوجد مهام",
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                            modifier = Modifier.size(54.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        val emptyLabel = when (activeTaskFilter) {
-                            "remaining" -> "لا متبقي اليوم! يومك مميز ونظيف 🌱"
-                            "completed" -> "لم تنجز مهاماً اليوم بعد. ابدأ الآن! 💪"
-                            else -> "قائمتك فارغة الآن. أضف مهامك الأولى!"
+                    // --- FILTERED TASKS RENDERING LIST INSIDE CARD ---
+                    val filteredTasks = when (activeTaskFilter) {
+                        "remaining" -> tasks.filter { !it.isCompleted }
+                        "completed" -> tasks.filter { it.isCompleted }
+                        else -> tasks
+                    }
+
+                    if (filteredTasks.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "لا يوجد مهام",
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(54.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val emptyLabel = when (activeTaskFilter) {
+                                    "remaining" -> "لا متبقي اليوم! يومك مميز ونظيف 🌱"
+                                    "completed" -> "لم تنجز مهاماً اليوم بعد. ابدأ الآن! 💪"
+                                    else -> "قائمتك فارغة الآن. أضف مهامك الأولى!"
+                                }
+                                Text(
+                                    text = emptyLabel,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
-                        Text(
-                            text = emptyLabel,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            filteredTasks.forEach { task ->
+                                TaskRowItem(
+                                    task = task,
+                                    onToggle = { viewModel.toggleTaskCompletion(task) },
+                                    onDelete = { viewModel.deleteTask(task) }
+                                )
+                            }
+                        }
                     }
                 }
-            }
-        } else {
-            items(filteredTasks) { task ->
-                TaskRowItem(
-                    task = task,
-                    onToggle = { viewModel.toggleTaskCompletion(task) },
-                    onDelete = { viewModel.deleteTask(task) }
-                )
             }
         }
 

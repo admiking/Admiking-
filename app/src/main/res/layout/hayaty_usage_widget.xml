@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/widget_background"
+    android:focusable="true"
+    android:clickable="true">
+
+    <!-- Top Row: App Title & Action -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp">
+        
+        <TextView
+            android:id="@+id/widget_app_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:text="📊 استخدام الهاتف اليوم"
+            android:textColor="#34D399"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_usage_refresh"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:text="تحديث 🔄"
+            android:textColor="#F59E0B"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"/>
+    </RelativeLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#213E37"
+        android:layout_marginBottom="6dp"/>
+
+    <!-- Total Usage Title -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical|end"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:id="@+id/widget_total_usage_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="إجمالي الوقت: ٣ ساعات و ٤٥ دقيقة"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+            
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" 📈 "
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Apps List Section -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- App Row 1 -->
+        <LinearLayout
+            android:id="@+id/widget_use_row_1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/widget_section_bg"
+            android:padding="5dp"
+            android:layout_marginBottom="3dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/widget_use_time_1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="٥٥ د"
+                android:textColor="#34D399"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:layout_marginStart="4dp"/>
+
+            <TextView
+                android:id="@+id/widget_use_app_1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="تطبيق"
+                android:textColor="#FFFFFF"
+                android:textSize="10sp"
+                android:gravity="end"
+                android:layout_marginEnd="6dp"
+                android:singleLine="true"
+                android:ellipsize="end"/>
+        </LinearLayout>
+
+        <!-- App Row 2 -->
+        <LinearLayout
+            android:id="@+id/widget_use_row_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/widget_section_bg"
+            android:padding="5dp"
+            android:layout_marginBottom="3dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/widget_use_time_2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="٣٠ د"
+                android:textColor="#34D399"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:layout_marginStart="4dp"/>
+
+            <TextView
+                android:id="@+id/widget_use_app_2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="تطبيق"
+                android:textColor="#FFFFFF"
+                android:textSize="10sp"
+                android:gravity="end"
+                android:layout_marginEnd="6dp"
+                android:singleLine="true"
+                android:ellipsize="end"/>
+        </LinearLayout>
+
+        <!-- App Row 3 -->
+        <LinearLayout
+            android:id="@+id/widget_use_row_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/widget_section_bg"
+            android:padding="5dp"
+            android:layout_marginBottom="3dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/widget_use_time_3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="١٥ د"
+                android:textColor="#34D399"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:layout_marginStart="4dp"/>
+
+            <TextView
+                android:id="@+id/widget_use_app_3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="تطبيق"
+                android:textColor="#FFFFFF"
+                android:textSize="10sp"
+                android:gravity="end"
+                android:layout_marginEnd="6dp"
+                android:singleLine="true"
+                android:ellipsize="end"/>
+        </LinearLayout>
+
+        <!-- Empty State UI -->
+        <TextView
+            android:id="@+id/widget_use_empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="لم يتم رصد استخدام للهاتف اليوم أو لم يتم منح الصلاحية 📊"
+            android:textColor="#94A3B8"
+            android:textSize="10sp"
+            android:visibility="visible"/>
+    </LinearLayout>
+</LinearLayout>

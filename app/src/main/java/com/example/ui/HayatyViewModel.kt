@@ -1046,6 +1046,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 generateMockUsageStats()
             }
+            com.example.widget.HayatyUsageWidgetProvider.triggerUpdate(getApplication())
         }
     }
 

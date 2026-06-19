@@ -69,6 +69,33 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/hayaty_tasks_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".widget.HayatyFiqhWidgetProvider"
+            android:exported="true"
+            android:label="حياتي - مسألة الفقه اليومية">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.UPDATE_WIDGET_DATA" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/hayaty_fiqh_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.HayatyUsageWidgetProvider"
+            android:exported="true"
+            android:label="حياتي - إحصاءات استخدام الهاتف">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.UPDATE_WIDGET_DATA" />
+                <action android:name="com.example.widget.REFRESH_USAGE_STATS" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/hayaty_usage_widget_info" />
+        </receiver>
     </application>
 
 </manifest>
