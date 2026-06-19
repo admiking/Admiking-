@@ -68,6 +68,16 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         prefs.edit().putString("ThemeMode", mode).apply()
     }
 
+    // --- Language State ---
+    private val _appLanguage = MutableStateFlow(prefs.getString("AppLanguage", "ar") ?: "ar")
+    val appLanguage: StateFlow<String> = _appLanguage.asStateFlow()
+
+    fun setAppLanguage(lang: String) {
+        _appLanguage.value = lang
+        prefs.edit().putString("AppLanguage", lang).apply()
+        com.example.util.LangHelper.setLanguage(lang)
+    }
+
     // --- Dynamic Time of Day State ---
     private val _timeOfDayOverride = MutableStateFlow(prefs.getString("TimeOfDayOverride", "auto") ?: "auto")
     val timeOfDayOverride: StateFlow<String> = _timeOfDayOverride.asStateFlow()
@@ -638,6 +648,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     private var focusTimer: Timer? = null
 
     init {
+        com.example.util.LangHelper.setLanguage(_appLanguage.value)
         // Hydrate database with initial apps & habits if empty
         viewModelScope.launch {
             repository.allHabits.first().let { currentHabits ->

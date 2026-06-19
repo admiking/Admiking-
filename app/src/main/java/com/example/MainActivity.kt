@@ -147,85 +147,96 @@ fun HayatyApp(viewModel: HayatyViewModel) {
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(NavItem.HOME) }
     
-    LaunchedEffect(Unit) {
-        viewModel.loadInstalledApps(context)
-        viewModel.launchAppEvent.collect { packageName ->
-            try {
-                val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-                if (intent != null) {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    context.startActivity(intent)
-                } else {
-                    android.widget.Toast.makeText(context, "تنبيه: التطبيق المرتبط غير مثبت على هذا الجهاز.", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                android.widget.Toast.makeText(context, "خطأ أثناء محاولة تشغيل التطبيق.", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val layoutDirection = if (appLanguage == "ar") {
+        androidx.compose.ui.unit.LayoutDirection.Rtl
+    } else {
+        androidx.compose.ui.unit.LayoutDirection.Ltr
     }
     
-    val isFocusActive by viewModel.isFocusActive.collectAsStateWithLifecycle()
-    val focusSeconds by viewModel.focusRemainingSeconds.collectAsStateWithLifecycle()
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalLayoutDirection provides layoutDirection
+    ) {
+        LaunchedEffect(Unit) {
+            viewModel.loadInstalledApps(context)
+            viewModel.launchAppEvent.collect { packageName ->
+                try {
+                    val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        context.startActivity(intent)
+                    } else {
+                        android.widget.Toast.makeText(context, "تنبيه: التطبيق المرتبط غير مثبت على هذا الجهاز.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    android.widget.Toast.makeText(context, "خطأ أثناء محاولة تشغيل التطبيق.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        
+        val isFocusActive by viewModel.isFocusActive.collectAsStateWithLifecycle()
+        val focusSeconds by viewModel.focusRemainingSeconds.collectAsStateWithLifecycle()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (isFocusActive) {
-            val focusTasks by viewModel.allTasks.collectAsStateWithLifecycle()
-            FocusActiveOverlay(
-                remainingSeconds = focusSeconds,
-                tasks = focusTasks,
-                onToggleTask = { task -> viewModel.toggleTaskCompletion(task) },
-                onCancel = { viewModel.stopFocusMode() }
-            )
-        } else {
-            Scaffold(
-                modifier = Modifier.fillMaxSize().testTag("app_scaffold"),
-                bottomBar = {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 8.dp,
-                        modifier = Modifier.navigationBarsPadding().testTag("bottom_navigation")
-                    ) {
-                        NavItem.values().forEach { item ->
-                            val isSelected = currentTab == item
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { currentTab = item },
-                                label = { 
-                                    Text(
-                                        text = item.title, 
-                                        fontSize = 11.sp, 
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        fontFamily = FontFamily.SansSerif
-                                    ) 
-                                },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (isSelected) item.iconSelected else item.iconUnselected,
-                                        contentDescription = item.title,
-                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                modifier = Modifier.testTag("nav_item_${item.route}")
-                            )
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (isFocusActive) {
+                val focusTasks by viewModel.allTasks.collectAsStateWithLifecycle()
+                FocusActiveOverlay(
+                    remainingSeconds = focusSeconds,
+                    tasks = focusTasks,
+                    onToggleTask = { task -> viewModel.toggleTaskCompletion(task) },
+                    onCancel = { viewModel.stopFocusMode() }
+                )
+            } else {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize().testTag("app_scaffold"),
+                    bottomBar = {
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 8.dp,
+                            modifier = Modifier.navigationBarsPadding().testTag("bottom_navigation")
+                        ) {
+                            NavItem.values().forEach { item ->
+                                val isSelected = currentTab == item
+                                NavigationBarItem(
+                                    selected = isSelected,
+                                    onClick = { currentTab = item },
+                                    label = { 
+                                        Text(
+                                            text = com.example.util.LangHelper.tr(item.title), 
+                                            fontSize = 11.sp, 
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            fontFamily = FontFamily.SansSerif
+                                        ) 
+                                    },
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (isSelected) item.iconSelected else item.iconUnselected,
+                                            contentDescription = com.example.util.LangHelper.tr(item.title),
+                                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("nav_item_${item.route}")
+                                )
+                            }
                         }
                     }
-                }
-            ) { innerPadding ->
-                AnimatedContent(
-                    targetState = currentTab,
-                    transitionSpec = {
-                        fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
-                        fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                    },
-                    modifier = Modifier.padding(innerPadding).fillMaxSize(),
-                    label = "TabTransition"
-                ) { targetTab ->
-                    when (targetTab) {
-                        NavItem.HOME -> HomeScreen(viewModel, onNavigateToFocus = { currentTab = NavItem.FOCUS })
-                        NavItem.HABITS -> HabitsScreen(viewModel)
-                        NavItem.FOCUS -> FocusScreen(viewModel)
-                        NavItem.QURAN -> QuranScreen(viewModel)
-                        NavItem.AI_COACH -> AICoachScreen(viewModel)
+                ) { innerPadding ->
+                    AnimatedContent(
+                        targetState = currentTab,
+                        transitionSpec = {
+                            fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
+                            fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                        },
+                        modifier = Modifier.padding(innerPadding).fillMaxSize(),
+                        label = "TabTransition"
+                    ) { targetTab ->
+                        when (targetTab) {
+                            NavItem.HOME -> HomeScreen(viewModel, onNavigateToFocus = { currentTab = NavItem.FOCUS })
+                            NavItem.HABITS -> HabitsScreen(viewModel)
+                            NavItem.FOCUS -> FocusScreen(viewModel)
+                            NavItem.QURAN -> QuranScreen(viewModel)
+                            NavItem.AI_COACH -> AICoachScreen(viewModel)
+                        }
                     }
                 }
             }
@@ -319,8 +330,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     var quickTaskTitle by remember { mutableStateOf("") }
     var quickTaskCategory by remember { mutableStateOf("عام") }
 
-    val formattedDate = remember {
-        val sdf = SimpleDateFormat("EEEE، d MMMM yyyy", Locale("ar"))
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val formattedDate = remember(appLanguage) {
+        val locale = if (appLanguage == "ar") Locale("ar") else Locale.ENGLISH
+        val pattern = if (appLanguage == "ar") "EEEE، d MMMM yyyy" else "EEEE, d MMMM yyyy"
+        val sdf = SimpleDateFormat(pattern, locale)
         sdf.format(Date())
     }
 
@@ -380,6 +394,24 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+                    IconButton(
+                        onClick = {
+                            val nextLang = if (appLanguage == "ar") "en" else "ar"
+                            viewModel.setAppLanguage(nextLang)
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Text(
+                            text = if (appLanguage == "ar") "EN" else "ع",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
                     IconButton(
                         onClick = {
@@ -487,7 +519,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = greetingText,
+                                text = com.example.util.LangHelper.tr(greetingText),
                                 color = Color.White,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
@@ -548,7 +580,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         Text(
-                            text = subtitleText,
+                            text = com.example.util.LangHelper.tr(subtitleText),
                             color = Color.White.copy(alpha = 0.9f),
                             fontSize = 12.sp,
                             lineHeight = 18.sp
@@ -591,7 +623,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = "ذكاء اصطناعي • نشط ✨",
+                                    text = com.example.util.LangHelper.tr("ذكاء اصطناعي • نشط ✨"),
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -606,14 +638,14 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "وقت ذروة الإنتاجية المكتشف: الآن",
+                            text = com.example.util.LangHelper.tr("وقت ذروة الإنتاجية المكتشف: الآن"),
                             color = Color.White,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "بناءً على نشاطك، هذا هو أفضل وقت لإتمام مهام البرمجة والعبادة وعاداتك اليومية. تم قفل التطبيقات المشتتة.",
+                            text = com.example.util.LangHelper.tr("بناءً على نشاطك، هذا هو أفضل وقت لإتمام مهام البرمجة والعبادة وعاداتك اليومية. تم قفل التطبيقات المشتتة."),
                             color = Color.White.copy(alpha = 0.85f),
                             fontSize = 12.sp,
                             lineHeight = 16.sp
@@ -630,7 +662,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
                             Text(
-                                text = "بدء جلسة تركيز (٢٥ د)",
+                                text = com.example.util.LangHelper.tr("بدء جلسة تركيز (٢٥ د)"),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -669,7 +701,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "الصلاة القادمة",
+                                text = com.example.util.LangHelper.tr("الصلاة القادمة"),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
@@ -680,26 +712,26 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         val currentHourStr = SimpleDateFormat("HH:mm", Locale.US).format(Date())
                         val nextPrayer = prayerTimes.firstOrNull { it.time >= currentHourStr } ?: prayerTimes.firstOrNull()
                         Text(
-                            text = nextPrayer?.arabicName ?: "العصر",
+                            text = com.example.util.LangHelper.tr(nextPrayer?.arabicName ?: "العصر"),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (nextPrayer != null) "خلال دافئة" else "بعد قليل",
+                            text = com.example.util.LangHelper.tr(if (nextPrayer != null) "خلال دافئة" else "بعد قليل"),
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "الورد اليومي: ٧٥٪",
+                            text = com.example.util.LangHelper.tr("الورد اليومي: ٧٥٪"),
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 }
-
+ 
                 // Stat 2: Screen Time
                 Card(
                     modifier = Modifier.weight(1f),
@@ -720,7 +752,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "استخدام الهاتف",
+                                text = com.example.util.LangHelper.tr("استخدام الهاتف"),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
@@ -734,7 +766,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "+١٢٪ عن الأمس",
+                            text = com.example.util.LangHelper.tr("+١٢٪ عن الأمس"),
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold
@@ -1477,7 +1509,80 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    HabitsRechartsChart(habits = habits, logs = allHabitLogs, viewModel = viewModel)
+                    var habitsChartMode by remember { mutableStateOf("heatmap") }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (habitsChartMode == "heatmap") MaterialTheme.colorScheme.primary else Color.Transparent)
+                                .clickable { habitsChartMode = "heatmap" }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DateRange,
+                                    contentDescription = "التقويم الشهري",
+                                    tint = if (habitsChartMode == "heatmap") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "التقويم الشهري (Heatmap) 📅",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (habitsChartMode == "heatmap") FontWeight.Bold else FontWeight.Normal,
+                                    color = if (habitsChartMode == "heatmap") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (habitsChartMode == "weekly") MaterialTheme.colorScheme.primary else Color.Transparent)
+                                .clickable { habitsChartMode = "weekly" }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.BarChart,
+                                    contentDescription = "الرسم الأسبوعي",
+                                    tint = if (habitsChartMode == "weekly") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "الرسم الأسبوعي 📊",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (habitsChartMode == "weekly") FontWeight.Bold else FontWeight.Normal,
+                                    color = if (habitsChartMode == "weekly") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (habitsChartMode == "heatmap") {
+                        HabitsMonthlyHeatmap(habits = habits, logs = allHabitLogs, viewModel = viewModel)
+                    } else {
+                        HabitsRechartsChart(habits = habits, logs = allHabitLogs, viewModel = viewModel)
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -3772,6 +3877,279 @@ fun HabitsRechartsChart(habits: List<com.example.data.Habit>, logs: List<com.exa
     )
 }
 
+@Composable
+fun HabitsMonthlyHeatmap(
+    habits: List<com.example.data.Habit>,
+    logs: List<com.example.data.HabitLog>,
+    viewModel: com.example.ui.HayatyViewModel
+) {
+    val cal = Calendar.getInstance()
+    val currentMonth = cal.get(Calendar.MONTH)
+    val currentYear = cal.get(Calendar.YEAR)
+    val todayDay = cal.get(Calendar.DAY_OF_MONTH)
+    
+    val monthNameAr = when(currentMonth) {
+        0 -> "يناير"
+        1 -> "فبراير"
+        2 -> "مارس"
+        3 -> "أبريل"
+        4 -> "مايو"
+        5 -> "يونيو"
+        6 -> "يوليو"
+        7 -> "أغسطس"
+        8 -> "سبتمبر"
+        9 -> "أكتوبر"
+        10 -> "نوفمبر"
+        11 -> "ديسمبر"
+        else -> ""
+    }
+    
+    // Set first day of month to find starting week column
+    val firstDayCal = Calendar.getInstance().apply {
+        set(Calendar.DAY_OF_MONTH, 1)
+    }
+    val startDayOfWeek = firstDayCal.get(Calendar.DAY_OF_WEEK) // 1=Sunday, 2=Monday, ..., 7=Saturday
+    val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    
+    // Convert to standard index starting on Sunday = 0
+    val emptySlots = startDayOfWeek - 1
+    
+    var selectedDayDetail by remember { mutableStateOf<String?>(null) }
+    var selectedDayCompletedList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedDayTotal by remember { mutableStateOf(0) }
+    var selectedDayNum by remember { mutableStateOf<Int?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+            .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "تقويم الالتزام لشهر $monthNameAr $currentYear 📅",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "اليوم: $todayDay $monthNameAr",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        val weekdays = listOf("أح", "ن", "ث", "ر", "خ", "ج", "س") // Sun to Sat
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            weekdays.forEach { day ->
+                Box(
+                    modifier = Modifier.width(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = day,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(6.dp))
+        
+        val totalCells = emptySlots + daysInMonth
+        val rowsCount = (totalCells + 6) / 7
+        
+        Column(
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            for (row in 0 until rowsCount) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    for (col in 0 until 7) {
+                        val cellIndex = row * 7 + col
+                        if (cellIndex < emptySlots || cellIndex >= totalCells) {
+                            Box(modifier = Modifier.size(32.dp))
+                        } else {
+                            val dayNum = cellIndex - emptySlots + 1
+                            
+                            val loopCal = Calendar.getInstance().apply {
+                                set(Calendar.YEAR, currentYear)
+                                set(Calendar.MONTH, currentMonth)
+                                set(Calendar.DAY_OF_MONTH, dayNum)
+                            }
+                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                            val dateStr = sdf.format(loopCal.time)
+                            
+                            val totalHabits = habits.size
+                            val completedLogs = logs.filter { log -> log.date == dateStr && log.isCompleted }
+                            val completedCount = completedLogs.size
+                            
+                            val percent = if (totalHabits > 0) completedCount.toFloat() / totalHabits else 0f
+                            
+                            val boxColor = when {
+                                totalHabits == 0 || completedCount == 0 -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                percent <= 0.25f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                percent <= 0.5f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                percent <= 0.75f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+                            
+                            val isToday = (dayNum == todayDay)
+                            val isSelected = (selectedDayNum == dayNum)
+                            
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(boxColor)
+                                    .then(
+                                        if (isSelected) {
+                                            Modifier.border(2.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(6.dp))
+                                        } else if (isToday) {
+                                            Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .clickable {
+                                        selectedDayNum = dayNum
+                                        selectedDayTotal = totalHabits
+                                        val compNames = completedLogs.mapNotNull { log ->
+                                            habits.find { it.id == log.habitId }?.run { "$icon $name" }
+                                        }
+                                        selectedDayCompletedList = compNames
+                                        selectedDayDetail = "التزام يوم $dayNum: $completedCount من أصل $totalHabits"
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = dayNum.toString(),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Normal,
+                                    color = when {
+                                        totalHabits == 0 || completedCount == 0 -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                        percent > 0.5f -> MaterialTheme.colorScheme.onPrimary
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "كثافة الالتزام:  ", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            listOf(
+                0.0f to "٠%",
+                0.25f to "٢٥%",
+                0.5f to "٥٠%",
+                0.75f to "٧٥%",
+                1.0f to "١٠٠%"
+            ).forEach { (pct, label) ->
+                val bg = when {
+                    pct == 0.0f -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    pct <= 0.25f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                    pct <= 0.5f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    pct <= 0.75f -> MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 2.dp)
+                        .size(12.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(bg)
+                )
+                Text(text = " $label ", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+            }
+        }
+
+        if (selectedDayDetail != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            selectedDayDetail = null
+                            selectedDayNum = null
+                            selectedDayCompletedList = emptyList()
+                        },
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "إغلاق",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                    Text(
+                        text = selectedDayDetail!!,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                
+                if (selectedDayCompletedList.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "العادات المنجزة: " + selectedDayCompletedList.joinToString(" ، "),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (selectedDayTotal > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "لم يتم إنجاز أي عادات في هذا اليوم 🧊",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WeeklyProductivityD3Chart(tasks: List<Task>, habitLogs: List<HabitLog>) {
@@ -5691,9 +6069,79 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                         }
 
                         Column(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
+                            // --- CARD 0: LANGUAGE SWITCHER ---
+                            val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+                            Card(
+                                modifier = Modifier.fillMaxWidth().testTag("language_settings_card"),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = if (appLanguage == "ar") "لغة واجهات التطبيق (App Language) 🌐" else "Application Language 🌐",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = if (appLanguage == "ar") "اللغة النشطة حالياً: العربية" else "Active Language: English",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.setAppLanguage("ar")
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            },
+                                            modifier = Modifier.weight(1f).height(36.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (appLanguage == "ar") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = if (appLanguage == "ar") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Text("العربية", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        
+                                        Button(
+                                            onClick = {
+                                                viewModel.setAppLanguage("en")
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            },
+                                            modifier = Modifier.weight(1f).height(36.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (appLanguage == "en") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = if (appLanguage == "en") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Text("English", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
                             Text(
                                 text = "🌾 التنبيه بذكر الله التلقائي طوال النهار:",
                                 fontSize = 14.sp,
