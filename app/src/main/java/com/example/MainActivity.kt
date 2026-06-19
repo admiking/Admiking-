@@ -103,13 +103,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+            val themeColor by viewModel.themeColor.collectAsStateWithLifecycle()
             val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 "dark" -> true
                 "light" -> false
                 else -> isSystemDark
             }
-            MyApplicationTheme(darkTheme = darkTheme) {
+            MyApplicationTheme(darkTheme = darkTheme, themeColor = themeColor) {
                 HayatyApp(viewModel)
             }
         }
@@ -258,6 +259,15 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     val todayLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
     val allHabitLogs by viewModel.allHabitLogs.collectAsStateWithLifecycle()
     val usageRecords by viewModel.usageRecords.collectAsStateWithLifecycle()
+    
+    val showTimerBanner by viewModel.showTimerBanner.collectAsStateWithLifecycle()
+    val showStatsGrid by viewModel.showStatsGrid.collectAsStateWithLifecycle()
+    val showPrayerWidget by viewModel.showPrayerWidget.collectAsStateWithLifecycle()
+    val showQuranTracker by viewModel.showQuranTracker.collectAsStateWithLifecycle()
+    val showFiqhWidget by viewModel.showFiqhWidget.collectAsStateWithLifecycle()
+    val showHabitWidget by viewModel.showHabitWidget.collectAsStateWithLifecycle()
+    val showTasksWidget by viewModel.showTasksWidget.collectAsStateWithLifecycle()
+    val showAiSuggestion by viewModel.showAiSuggestion.collectAsStateWithLifecycle()
 
     val currentTimeOfDay by viewModel.currentTimeOfDay.collectAsStateWithLifecycle()
     val timeOfDayOverride by viewModel.timeOfDayOverride.collectAsStateWithLifecycle()
@@ -316,6 +326,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
 
     var showAddTaskDialog by remember { mutableStateOf(false) }
     var showCitySelectorDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var selectedPrayerDetailKey by remember { mutableStateOf<String?>(null) }
 
     val showTaskAddDialogOnStart by viewModel.showTaskAddDialogOnStart.collectAsStateWithLifecycle()
@@ -435,6 +446,21 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     }
 
                     IconButton(
+                        onClick = { showSettingsDialog = true },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                            .testTag("settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "الإعدادات",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = { /* Informational action */ },
                         modifier = Modifier
                             .size(40.dp)
@@ -466,7 +492,8 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
         }
 
         // --- TIME OF DAY DYNAMIC BANNER WITH LIVE CLOCK ---
-        item {
+        if (showTimerBanner) {
+            item {
             var timeString by remember { mutableStateOf("") }
             LaunchedEffect(Unit) {
                 while (true) {
@@ -589,9 +616,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- AI INTUITIVE GRADIENT CARD (AI Suggestion Card) ---
-        item {
+        if (showAiSuggestion) {
+            item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -671,9 +700,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- HIGH DENSITY STATS GRID (2 COLUMNS) ---
-        item {
+        if (showStatsGrid) {
+            item {
             val totalMinutes = usageRecords.sumOf { it.durationMs } / 60000
             val usageText = "${totalMinutes / 60} س ${totalMinutes % 60} د"
             
@@ -786,9 +817,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- PRAYER TIMES WIDGET ---
-        item {
+        if (showPrayerWidget) {
+            item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1015,9 +1048,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- POST-PRAYER QURAN TRACKER WIDGET ---
-        item {
+        if (showQuranTracker) {
+            item {
             val quranStatus by viewModel.quranPostPrayerStatus.collectAsStateWithLifecycle()
             val totalCompleted = quranStatus.values.count { it }
             val totalPrayers = 5
@@ -1244,9 +1279,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- DAILY FIQH QUESTION OF THE DAY WIDGET ---
-        item {
+        if (showFiqhWidget) {
+            item {
             val todayDateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
             val context = androidx.compose.ui.platform.LocalContext.current
             val prefs = remember(context) { context.getSharedPreferences("HayatyPrefs", android.content.Context.MODE_PRIVATE) }
@@ -1456,9 +1493,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- HABIT TRACKER INTERACTIVE WIDGET ---
-        item {
+        if (showHabitWidget) {
+            item {
             var quickHabitName by remember { mutableStateOf("") }
             val todayHabitLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
 
@@ -1764,9 +1803,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- TASKS LIST WIDGET (To-Do List Manager) ---
-        item {
+        if (showTasksWidget) {
+            item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1967,6 +2008,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+        }
 
         // --- QUICK FOCUS & PERSISTENCE INSIGHT ---
         item {
@@ -2008,6 +2050,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // --- Settings Dialog ---
+    if (showSettingsDialog) {
+        com.example.ui.SettingsDialog(viewModel = viewModel, onDismiss = { showSettingsDialog = false })
     }
 
     // --- City Picker Dialog ---
@@ -2140,6 +2187,14 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 }
             }
         }
+    }
+
+    // --- Settings Dialog ---
+    if (showSettingsDialog) {
+        SettingsDialog(
+            viewModel = viewModel,
+            onDismiss = { showSettingsDialog = false }
+        )
     }
 
     // --- Add Task Dialog ---
@@ -9032,6 +9087,332 @@ fun HighlightedQuranText(
     }
     Text(text = annotatedString, style = style, modifier = modifier)
 }
+
+@Composable
+fun SettingsDialog(
+    viewModel: HayatyViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val themeColor by viewModel.themeColor.collectAsStateWithLifecycle()
+    val prayerOffsetMinutes by viewModel.prayerOffsetMinutes.collectAsStateWithLifecycle()
+    
+    val showTimerBanner by viewModel.showTimerBanner.collectAsStateWithLifecycle()
+    val showStatsGrid by viewModel.showStatsGrid.collectAsStateWithLifecycle()
+    val showPrayerWidget by viewModel.showPrayerWidget.collectAsStateWithLifecycle()
+    val showQuranTracker by viewModel.showQuranTracker.collectAsStateWithLifecycle()
+    val showFiqhWidget by viewModel.showFiqhWidget.collectAsStateWithLifecycle()
+    val showHabitWidget by viewModel.showHabitWidget.collectAsStateWithLifecycle()
+    val showTasksWidget by viewModel.showTasksWidget.collectAsStateWithLifecycle()
+    val showAiSuggestion by viewModel.showAiSuggestion.collectAsStateWithLifecycle()
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .heightIn(max = 560.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "الاعدادات وتخصيص الواجهة",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "إغلاق",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Section 1: Themes & Colors
+                Text(
+                    text = "🎨 المظهر والثيم البصري",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Right
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Theme mode selection row (System, Light, Dark)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val modes = listOf(
+                        Triple("system", "تلقائي", "🌓"),
+                        Triple("light", "مضيء", "☀️"),
+                        Triple("dark", "مظلم", "🌙")
+                    )
+                    modes.forEach { (mode, label, emoji) ->
+                        val isSel = themeMode == mode
+                        Button(
+                            onClick = { viewModel.setThemeMode(mode) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(emoji, fontSize = 16.sp)
+                                Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Accent color selector circles
+                Text(
+                    text = "اختر لون سمة التطبيق الأساسي:",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Right
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val colors = listOf(
+                        Triple("emerald", Color(0xFF059669), "زمردي"),
+                        Triple("royal_blue", Color(0xFF2563EB), "ملكي"),
+                        Triple("quiet_purple", Color(0xFF7C3AED), "بنفسجي"),
+                        Triple("authentic_gold", Color(0xFFD97706), "ذهبي")
+                    )
+
+                    colors.forEach { (colorKey, colorVal, name) ->
+                        val isSel = themeColor == colorKey
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clickable { viewModel.setThemeColor(colorKey) }
+                                .padding(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(colorVal, CircleShape)
+                                    .border(
+                                        width = if (isSel) 3.dp else 0.dp,
+                                        color = if (isSel) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSel) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "selected",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = name,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSel) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Section 2: Prayer Timing adjustments (offsets)
+                Text(
+                    text = "⏰ ضبط فارق توقيت الصلاة",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Right
+                )
+                Text(
+                    text = "يمكنك تعديل توقيت الصلاة بإضافة أو خصم دقائق يدوياً.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Right
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { viewModel.setPrayerOffsetMinutes(prayerOffsetMinutes - 5) },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Text("-5", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { viewModel.setPrayerOffsetMinutes(prayerOffsetMinutes - 1) },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Remove, contentDescription = "خصم دقيقة", modifier = Modifier.size(16.dp))
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = if (prayerOffsetMinutes > 0) "+$prayerOffsetMinutes د"
+                                   else if (prayerOffsetMinutes < 0) "$prayerOffsetMinutes د"
+                                   else "الافتراضي (0 د)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    IconButton(
+                        onClick = { viewModel.setPrayerOffsetMinutes(prayerOffsetMinutes + 1) },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = "إضافة دقيقة", modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { viewModel.setPrayerOffsetMinutes(prayerOffsetMinutes + 5) },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Text("+5", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(6.dp))
+                if (prayerOffsetMinutes != 0) {
+                    TextButton(onClick = { viewModel.setPrayerOffsetMinutes(0) }) {
+                        Text("إعادة التعيين التلقائي", fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Section 3: UI Widget Customizability (Show/Hide)
+                Text(
+                    text = "🖥️ تخصيص الواجهة والقطع",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Right
+                )
+                Text(
+                    text = "قم بإلغاء التحديد لحذف أو إخفاء أي قسم تريده من الشاشة الرئيسية.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Right
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val toggles = listOf(
+                    Quadruple("بنر الوقت التنازلي والترحيب", showTimerBanner, { b: Boolean -> viewModel.setShowTimerBanner(b) }, "clock"),
+                    Quadruple("بطاقة توجيهات ومستشار الذكاء", showAiSuggestion, { b: Boolean -> viewModel.setShowAiSuggestion(b) }, "intelligence"),
+                    Quadruple("لوحة الإحصائيات والأرقام", showStatsGrid, { b: Boolean -> viewModel.setShowStatsGrid(b) }, "assessment"),
+                    Quadruple("جدول مواقيت الصلاة والقبلة", showPrayerWidget, { b: Boolean -> viewModel.setShowPrayerWidget(b) }, "schedule"),
+                    Quadruple("متابع ختمة القرآن الكريم", showQuranTracker, { b: Boolean -> viewModel.setShowQuranTracker(b) }, "book"),
+                    Quadruple("فقرة سؤال الفقه المتجدد", showFiqhWidget, { b: Boolean -> viewModel.setShowFiqhWidget(b) }, "menu_book"),
+                    Quadruple("منظم المهام والمسؤوليات اليومية", showTasksWidget, { b: Boolean -> viewModel.setShowTasksWidget(b) }, "checklist")
+                )
+
+                toggles.forEach { (label, value, onToggle, tag) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                            .clickable { onToggle(!value) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Switch(
+                            checked = value,
+                            onCheckedChange = { onToggle(it) },
+                            modifier = Modifier.testTag("switch_widget_$tag")
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (value) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Right,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("حفظ وتعديل الواجهة 🎉", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 
 

@@ -68,6 +68,83 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         prefs.edit().putString("ThemeMode", mode).apply()
     }
 
+    // --- Theme Accent color ---
+    private val _themeColor = MutableStateFlow(prefs.getString("ThemeColor", "emerald") ?: "emerald")
+    val themeColor: StateFlow<String> = _themeColor.asStateFlow()
+
+    fun setThemeColor(color: String) {
+        _themeColor.value = color
+        prefs.edit().putString("ThemeColor", color).apply()
+    }
+
+    // --- Prayer Offsets ---
+    private val _prayerOffsetMinutes = MutableStateFlow(prefs.getInt("PrayerOffsetMinutes", 0))
+    val prayerOffsetMinutes: StateFlow<Int> = _prayerOffsetMinutes.asStateFlow()
+
+    fun setPrayerOffsetMinutes(minutes: Int) {
+        _prayerOffsetMinutes.value = minutes
+        prefs.edit().putInt("PrayerOffsetMinutes", minutes).apply()
+        // Force widgets and triggers to update too
+        com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+    }
+
+    // --- Component Visibility / Widgets Customization ---
+    private val _showTimerBanner = MutableStateFlow(prefs.getBoolean("ShowTimerBanner", true))
+    val showTimerBanner: StateFlow<Boolean> = _showTimerBanner.asStateFlow()
+    fun setShowTimerBanner(show: Boolean) {
+        _showTimerBanner.value = show
+        prefs.edit().putBoolean("ShowTimerBanner", show).apply()
+    }
+
+    private val _showStatsGrid = MutableStateFlow(prefs.getBoolean("ShowStatsGrid", true))
+    val showStatsGrid: StateFlow<Boolean> = _showStatsGrid.asStateFlow()
+    fun setShowStatsGrid(show: Boolean) {
+        _showStatsGrid.value = show
+        prefs.edit().putBoolean("ShowStatsGrid", show).apply()
+    }
+
+    private val _showPrayerWidget = MutableStateFlow(prefs.getBoolean("ShowPrayerWidget", true))
+    val showPrayerWidget: StateFlow<Boolean> = _showPrayerWidget.asStateFlow()
+    fun setShowPrayerWidget(show: Boolean) {
+        _showPrayerWidget.value = show
+        prefs.edit().putBoolean("ShowPrayerWidget", show).apply()
+    }
+
+    private val _showQuranTracker = MutableStateFlow(prefs.getBoolean("ShowQuranTracker", true))
+    val showQuranTracker: StateFlow<Boolean> = _showQuranTracker.asStateFlow()
+    fun setShowQuranTracker(show: Boolean) {
+        _showQuranTracker.value = show
+        prefs.edit().putBoolean("ShowQuranTracker", show).apply()
+    }
+
+    private val _showFiqhWidget = MutableStateFlow(prefs.getBoolean("ShowFiqhWidget", true))
+    val showFiqhWidget: StateFlow<Boolean> = _showFiqhWidget.asStateFlow()
+    fun setShowFiqhWidget(show: Boolean) {
+        _showFiqhWidget.value = show
+        prefs.edit().putBoolean("ShowFiqhWidget", show).apply()
+    }
+
+    private val _showHabitWidget = MutableStateFlow(prefs.getBoolean("ShowHabitWidget", true))
+    val showHabitWidget: StateFlow<Boolean> = _showHabitWidget.asStateFlow()
+    fun setShowHabitWidget(show: Boolean) {
+        _showHabitWidget.value = show
+        prefs.edit().putBoolean("ShowHabitWidget", show).apply()
+    }
+
+    private val _showTasksWidget = MutableStateFlow(prefs.getBoolean("ShowTasksWidget", true))
+    val showTasksWidget: StateFlow<Boolean> = _showTasksWidget.asStateFlow()
+    fun setShowTasksWidget(show: Boolean) {
+        _showTasksWidget.value = show
+        prefs.edit().putBoolean("ShowTasksWidget", show).apply()
+    }
+
+    private val _showAiSuggestion = MutableStateFlow(prefs.getBoolean("ShowAiSuggestion", true))
+    val showAiSuggestion: StateFlow<Boolean> = _showAiSuggestion.asStateFlow()
+    fun setShowAiSuggestion(show: Boolean) {
+        _showAiSuggestion.value = show
+        prefs.edit().putBoolean("ShowAiSuggestion", show).apply()
+    }
+
     // --- Language State ---
     private val _appLanguage = MutableStateFlow(prefs.getString("AppLanguage", "ar") ?: "ar")
     val appLanguage: StateFlow<String> = _appLanguage.asStateFlow()
@@ -177,18 +254,45 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         },
         combine(_gpsLatitude, _gpsLongitude, _apiPrayerTimes) { lat, lon, apiTimes ->
             Triple(lat, lon, apiTimes)
-        }
-    ) { group1, group2 ->
+        },
+        _prayerOffsetMinutes
+    ) { group1, group2, offset ->
         val (city, _, usingGps) = group1
         val (lat, lon, apiTimes) = group2
         
-        if (apiTimes != null && apiTimes.isNotEmpty()) {
+        val baseList = if (apiTimes != null && apiTimes.isNotEmpty()) {
             apiTimes
         } else {
             if (usingGps && lat != null && lon != null) {
                 PrayerTimesHelper.getPrayerTimesForCoordinates(lat as Double, lon as Double)
             } else {
                 PrayerTimesHelper.getPrayerTimesForCity(city as String)
+            }
+        }
+        
+        if (offset == 0) {
+            baseList
+        } else {
+            baseList.map { prayer ->
+                try {
+                    val parts = prayer.time.split(":")
+                    if (parts.size == 2) {
+                        val hour = parts[0].toInt()
+                        val minute = parts[1].toInt()
+                        val cal = java.util.Calendar.getInstance().apply {
+                            set(java.util.Calendar.HOUR_OF_DAY, hour)
+                            set(java.util.Calendar.MINUTE, minute)
+                            set(java.util.Calendar.SECOND, 0)
+                        }
+                        cal.add(java.util.Calendar.MINUTE, offset)
+                        val formatted = String.format(java.util.Locale.US, "%02d:%02d", cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
+                        prayer.copy(time = formatted)
+                    } else {
+                        prayer
+                    }
+                } catch (e: Exception) {
+                    prayer
+                }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
