@@ -36,7 +36,7 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                pendingResult.finish()
+                pendingResult?.finish()
             }
         }
     }
@@ -44,8 +44,7 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         val action = intent.action
-        if (action == AppWidgetManager.ACTION_APPWIDGET_UPDATE || 
-            action == "com.example.widget.UPDATE_WIDGET_DATA") {
+        if (action == "com.example.widget.UPDATE_WIDGET_DATA") {
             
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = ComponentName(context, HayatyUsageWidgetProvider::class.java)
@@ -60,7 +59,7 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult.finish()
+                    pendingResult?.finish()
                 }
             }
         } else if (action == "com.example.widget.REFRESH_USAGE_STATS") {
@@ -78,7 +77,7 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult.finish()
+                    pendingResult?.finish()
                 }
             }
         }

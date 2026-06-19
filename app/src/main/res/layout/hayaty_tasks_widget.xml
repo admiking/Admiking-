@@ -34,8 +34,7 @@
             android:textSize="10sp"
             android:textStyle="bold"
             android:clickable="true"
-            android:focusable="true"
-            android:background="?android:attr/selectableItemBackground" />
+            android:focusable="true" />
     </RelativeLayout>
 
     <!-- Divider -->
@@ -73,8 +72,7 @@
                 android:gravity="center"
                 android:textSize="11sp"
                 android:clickable="true"
-                android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"/>
+                android:focusable="true"/>
 
             <!-- Category -->
             <TextView
@@ -110,8 +108,7 @@
                 android:textSize="14sp"
                 android:textColor="#34D399"
                 android:clickable="true"
-                android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"/>
+                android:focusable="true"/>
         </LinearLayout>
 
         <!-- Row 2 -->
@@ -135,8 +132,7 @@
                 android:gravity="center"
                 android:textSize="11sp"
                 android:clickable="true"
-                android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"/>
+                android:focusable="true"/>
 
             <!-- Category -->
             <TextView
@@ -172,8 +168,7 @@
                 android:textSize="14sp"
                 android:textColor="#34D399"
                 android:clickable="true"
-                android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"/>
+                android:focusable="true"/>
         </LinearLayout>
 
         <!-- Row 3 -->
@@ -197,8 +192,7 @@
                 android:gravity="center"
                 android:textSize="11sp"
                 android:clickable="true"
-                android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"/>
+                android:focusable="true"/>
 
             <!-- Category -->
             <TextView
@@ -234,8 +228,7 @@
                 android:textSize="14sp"
                 android:textColor="#34D399"
                 android:clickable="true"
-                android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"/>
+                android:focusable="true"/>
         </LinearLayout>
 
         <!-- Empty State Row -->

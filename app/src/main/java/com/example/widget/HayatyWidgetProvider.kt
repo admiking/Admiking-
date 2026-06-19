@@ -33,7 +33,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                pendingResult.finish()
+                pendingResult?.finish()
             }
         }
     }
@@ -41,8 +41,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         val action = intent.action
-        if (action == AppWidgetManager.ACTION_APPWIDGET_UPDATE || 
-            action == "com.example.widget.UPDATE_WIDGET_DATA") {
+        if (action == "com.example.widget.UPDATE_WIDGET_DATA") {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = ComponentName(context, HayatyWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
@@ -56,7 +55,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult.finish()
+                    pendingResult?.finish()
                 }
             }
         } else if (action == "com.example.widget.TOGGLE_CITY") {
@@ -81,7 +80,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult.finish()
+                    pendingResult?.finish()
                 }
             }
         } else if (action == "com.example.widget.INCREMENT_TASBIH") {
@@ -101,7 +100,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult.finish()
+                    pendingResult?.finish()
                 }
             }
         }
