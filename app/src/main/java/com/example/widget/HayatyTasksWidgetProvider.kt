@@ -23,7 +23,7 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        val pendingResult = goAsync()
+        val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 for (appWidgetId in appWidgetIds) {
@@ -32,7 +32,11 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                pendingResult?.finish()
+                try {
+                    pendingResult?.finish()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }
@@ -47,7 +51,7 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
             val componentName = ComponentName(context, HayatyTasksWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
             
-            val pendingResult = goAsync()
+            val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     for (appWidgetId in appWidgetIds) {
@@ -56,13 +60,17 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult?.finish()
+                    try {
+                        pendingResult?.finish()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         } else if (action == "com.example.widget.TOGGLE_TASK_COMPLETE") {
             val taskId = intent.getIntExtra("task_id", -1)
             if (taskId != -1) {
-                val pendingResult = goAsync()
+                val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         val db = AppDatabase.getDatabase(context)
@@ -78,14 +86,18 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
-                        pendingResult?.finish()
+                        try {
+                            pendingResult?.finish()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
             }
         } else if (action == "com.example.widget.DELETE_TASK") {
             val taskId = intent.getIntExtra("task_id", -1)
             if (taskId != -1) {
-                val pendingResult = goAsync()
+                val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         val db = AppDatabase.getDatabase(context)
@@ -100,7 +112,11 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
-                        pendingResult?.finish()
+                        try {
+                            pendingResult?.finish()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
             }

@@ -27,7 +27,7 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        val pendingResult = goAsync()
+        val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 for (appWidgetId in appWidgetIds) {
@@ -36,7 +36,11 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                pendingResult?.finish()
+                try {
+                    pendingResult?.finish()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }
@@ -50,7 +54,7 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
             val componentName = ComponentName(context, HayatyUsageWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
             
-            val pendingResult = goAsync()
+            val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     for (appWidgetId in appWidgetIds) {
@@ -59,11 +63,15 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult?.finish()
+                    try {
+                        pendingResult?.finish()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         } else if (action == "com.example.widget.REFRESH_USAGE_STATS") {
-            val pendingResult = goAsync()
+            val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     refreshDeviceUsageStats(context)
@@ -77,7 +85,11 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult?.finish()
+                    try {
+                        pendingResult?.finish()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }

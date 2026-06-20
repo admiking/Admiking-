@@ -21,6 +21,7 @@ import java.net.URL
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.*
@@ -482,10 +483,15 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         return java.io.File(dir, String.format(Locale.US, "%03d.mp3", suraId))
     }
 
+    fun isSuraDownloaded(suraId: Int, reciterName: String): Boolean {
+        val file = getSuraSaveFile(suraId, reciterName)
+        return file.exists() && file.length() > 1024
+    }
+
     fun refreshDownloadedSuras() {
         val currentReciter = _selectedReciterName.value
         val map = (1..114).associateWith { id ->
-            getSuraSaveFile(id, currentReciter).exists()
+            isSuraDownloaded(id, currentReciter)
         }
         _downloadedSuras.value = map
     }
@@ -497,6 +503,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         val reciterUrlBase = reciters[reciterName] ?: "https://server14.mp3quran.net/husr/warsh/"
         val fileUrlStr = "$reciterUrlBase${String.format(Locale.US, "%03d.mp3", suraId)}"
         val destinationFile = getSuraSaveFile(suraId, reciterName)
+        val tempFile = java.io.File(destinationFile.absolutePath + ".tmp")
 
         val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -514,7 +521,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
 
                 val fileLength = connection.contentLength
                 val input = connection.inputStream
-                val output = java.io.FileOutputStream(destinationFile)
+                val output = java.io.FileOutputStream(tempFile)
 
                 val data = ByteArray(4096)
                 var total: Long = 0
@@ -532,19 +539,174 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                 output.close()
                 input.close()
                 
+                if (tempFile.exists()) {
+                    if (destinationFile.exists()) {
+                        destinationFile.delete()
+                    }
+                    tempFile.renameTo(destinationFile)
+                }
+
                 _downloadProgress.value = _downloadProgress.value - suraId
                 refreshDownloadedSuras()
             } catch (e: Exception) {
                 e.printStackTrace()
                 _downloadProgress.value = _downloadProgress.value - suraId
-                if (destinationFile.exists()) {
-                    destinationFile.delete()
+                if (tempFile.exists()) {
+                    tempFile.delete()
                 }
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        getApplication(),
+                        "فشل تحميل سورة ${com.example.util.QuranData.suras.find { it.id == suraId }?.name ?: suraId}. يرجى التحقق من اتصال الإنترنت.",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+                refreshDownloadedSuras()
             } finally {
                 _downloadingJobs.remove(suraId)
             }
         }
         _downloadingJobs[suraId] = job
+    }
+
+    // --- Batch/Full Quran Download State ---
+    private val _isFullDownloading = MutableStateFlow(false)
+    val isFullDownloading: StateFlow<Boolean> = _isFullDownloading.asStateFlow()
+
+    private val _fullDownloadProgress = MutableStateFlow(0f)
+    val fullDownloadProgress: StateFlow<Float> = _fullDownloadProgress.asStateFlow()
+
+    private val _fullDownloadStatus = MutableStateFlow("")
+    val fullDownloadStatus: StateFlow<String> = _fullDownloadStatus.asStateFlow()
+
+    private var fullDownloadJob: kotlinx.coroutines.Job? = null
+
+    fun startFullDownload() {
+        if (_isFullDownloading.value) return
+        _isFullDownloading.value = true
+        _fullDownloadProgress.value = 0f
+        _fullDownloadStatus.value = "جاري بدء تحميل المصحف كاملاً..."
+
+        fullDownloadJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val reciterName = _selectedReciterName.value
+            val reciterUrlBase = reciters[reciterName] ?: "https://server14.mp3quran.net/husr/warsh/"
+            
+            try {
+                var completedCount = 0
+                for (suraId in 1..114) {
+                    if (!isActive) break
+                    
+                    val suraName = com.example.util.QuranData.suras.find { it.id == suraId }?.name ?: "السورة $suraId"
+                    _fullDownloadStatus.value = "تحميل $suraName (النص والتلاوة)... ($suraId/114)"
+                    
+                    // 1. Download & cache verses if not loaded
+                    val cachedText = prefs.getString("sura_verses_$suraId", null)
+                    if (cachedText == null) {
+                        try {
+                            val url = java.net.URL("https://api.alquran.cloud/v1/surah/$suraId/ar.warsh")
+                            val connection = url.openConnection() as java.net.HttpURLConnection
+                            connection.connectTimeout = 8000
+                            connection.readTimeout = 10000
+                            connection.connect()
+
+                            if (connection.responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                                val text = connection.inputStream.bufferedReader().use { it.readText() }
+                                val jsonObject = org.json.JSONObject(text)
+                                val data = jsonObject.getJSONObject("data")
+                                val ayahs = data.getJSONArray("ayahs")
+                                val list = mutableListOf<String>()
+                                for (i in 0 until ayahs.length()) {
+                                    val ayah = ayahs.getJSONObject(i)
+                                    list.add(ayah.getString("text"))
+                                }
+
+                                if (list.isNotEmpty()) {
+                                    val joined = list.joinToString("|||")
+                                    prefs.edit().putString("sura_verses_$suraId", joined).apply()
+                                    _loadedSuraVerses.value = _loadedSuraVerses.value + (suraId to list)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    } else if (!_loadedSuraVerses.value.containsKey(suraId)) {
+                        // Put in memory if not already there
+                        val versesList = cachedText.split("|||")
+                        _loadedSuraVerses.value = _loadedSuraVerses.value + (suraId to versesList)
+                    }
+
+                    // 2. Download audio if not existing
+                    val destinationFile = getSuraSaveFile(suraId, reciterName)
+                    if (!isSuraDownloaded(suraId, reciterName)) {
+                        val tempFile = java.io.File(destinationFile.absolutePath + ".tmp")
+                        val fileUrlStr = "$reciterUrlBase${String.format(Locale.US, "%03d.mp3", suraId)}"
+                        try {
+                            val url = java.net.URL(fileUrlStr)
+                            val connection = url.openConnection() as java.net.HttpURLConnection
+                            connection.connectTimeout = 8000
+                            connection.readTimeout = 12000
+                            connection.connect()
+
+                            if (connection.responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                                val input = connection.inputStream
+                                val output = java.io.FileOutputStream(tempFile)
+                                val data = ByteArray(4096)
+                                var count: Int
+                                while (input.read(data).also { count = it } != -1) {
+                                    if (!isActive) {
+                                        output.close()
+                                        input.close()
+                                        if (tempFile.exists()) tempFile.delete()
+                                        throw kotlinx.coroutines.CancellationException()
+                                    }
+                                    output.write(data, 0, count)
+                                }
+                                output.flush()
+                                output.close()
+                                input.close()
+
+                                if (tempFile.exists()) {
+                                    if (destinationFile.exists()) {
+                                        destinationFile.delete()
+                                    }
+                                    tempFile.renameTo(destinationFile)
+                                }
+                            }
+                        } catch (ce: kotlinx.coroutines.CancellationException) {
+                            if (tempFile.exists()) tempFile.delete()
+                            throw ce
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            if (tempFile.exists()) {
+                                tempFile.delete()
+                            }
+                        }
+                    }
+
+                    completedCount++
+                    _fullDownloadProgress.value = completedCount / 114f
+                    refreshDownloadedSuras()
+                }
+
+                if (isActive) {
+                    _fullDownloadStatus.value = "تم تحميل المصحف الشريف بكامل تلاواته وصفحاته بنجاح! 🎉"
+                }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                _fullDownloadStatus.value = "تم إلغاء عملية التحميل."
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _fullDownloadStatus.value = "خطأ أثناء التحميل: ${e.localizedMessage}"
+            } finally {
+                _isFullDownloading.value = false
+                refreshDownloadedSuras()
+            }
+        }
+    }
+
+    fun cancelFullDownload() {
+        fullDownloadJob?.cancel()
+        _isFullDownloading.value = false
+        _fullDownloadStatus.value = "تم إلغاء التحميل."
     }
 
     fun deleteSuraAudio(suraId: Int) {
@@ -568,7 +730,7 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
 
                 val reciterName = _selectedReciterName.value
                 val file = getSuraSaveFile(suraId, reciterName)
-                val mediaPath = if (file.exists()) {
+                val mediaPath = if (isSuraDownloaded(suraId, reciterName)) {
                     file.absolutePath
                 } else {
                     val reciterUrlBase = reciters[reciterName] ?: "https://server14.mp3quran.net/husr/warsh/"
@@ -587,8 +749,13 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                     setOnCompletionListener {
                         stopAudioPlay()
                     }
-                    setOnErrorListener { _, _, _ ->
+                    setOnErrorListener { _, what, extra ->
                         stopAudioPlay()
+                        android.widget.Toast.makeText(
+                            getApplication(),
+                            "عذراً، فشل تشغيل تلاوة السورة. تحقق من اتصالك الإنترنت.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
                         true
                     }
                 }
@@ -596,6 +763,11 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 e.printStackTrace()
                 stopAudioPlay()
+                android.widget.Toast.makeText(
+                    getApplication(),
+                    "عذراً، حدث خطأ أثناء تشغيل الملف الصوتي.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             }
         }
     }

@@ -24,7 +24,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        val pendingResult = goAsync()
+        val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 for (appWidgetId in appWidgetIds) {
@@ -33,7 +33,11 @@ class HayatyWidgetProvider : AppWidgetProvider() {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                pendingResult?.finish()
+                try {
+                    pendingResult?.finish()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }
@@ -46,7 +50,7 @@ class HayatyWidgetProvider : AppWidgetProvider() {
             val componentName = ComponentName(context, HayatyWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
             
-            val pendingResult = goAsync()
+            val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     for (appWidgetId in appWidgetIds) {
@@ -55,11 +59,15 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult?.finish()
+                    try {
+                        pendingResult?.finish()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         } else if (action == "com.example.widget.TOGGLE_CITY") {
-            val pendingResult = goAsync()
+            val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
@@ -80,11 +88,15 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult?.finish()
+                    try {
+                        pendingResult?.finish()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         } else if (action == "com.example.widget.INCREMENT_TASBIH") {
-            val pendingResult = goAsync()
+            val pendingResult: android.content.BroadcastReceiver.PendingResult? = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
@@ -100,7 +112,11 @@ class HayatyWidgetProvider : AppWidgetProvider() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
-                    pendingResult?.finish()
+                    try {
+                        pendingResult?.finish()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }

@@ -5106,6 +5106,10 @@ fun QuranScreen(viewModel: HayatyViewModel) {
     val downloadedSuras by viewModel.downloadedSuras.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
     
+    val isFullDownloading by viewModel.isFullDownloading.collectAsStateWithLifecycle()
+    val fullDownloadProgress by viewModel.fullDownloadProgress.collectAsStateWithLifecycle()
+    val fullDownloadStatus by viewModel.fullDownloadStatus.collectAsStateWithLifecycle()
+    
     val playingSuraId by viewModel.playingSuraId.collectAsStateWithLifecycle()
     val isAudioPlaying by viewModel.isAudioPlaying.collectAsStateWithLifecycle()
     val audioProgress by viewModel.audioProgress.collectAsStateWithLifecycle()
@@ -5366,6 +5370,137 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                                 }
                                 
                                 Spacer(modifier = Modifier.height(10.dp))
+
+                                // Comprehensive offline downloader Card
+                                val allDownloaded = remember(downloadedSuras) {
+                                    (1..114).all { downloadedSuras[it] == true }
+                                }
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isFullDownloading) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                                                         else if (allDownloaded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                    ),
+                                    border = BorderStroke(1.dp, if (isFullDownloading) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (allDownloaded) Icons.Default.CheckCircle else Icons.Default.CloudDownload,
+                                                    contentDescription = null,
+                                                    tint = if (allDownloaded || isFullDownloading) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Column {
+                                                    Text(
+                                                        text = "تحميل المصحف الشامل",
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = if (isFullDownloading) "جاري تنزيل الصوت والصفحات..." 
+                                                               else if (allDownloaded) "المصحف الشريف متوفر بالكامل بدون إنترنت 🎉" 
+                                                               else "تنزيل تلاوات جميع السور والصفحات دفعة واحدة",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                            
+                                            if (isFullDownloading) {
+                                                IconButton(
+                                                    onClick = { viewModel.cancelFullDownload() },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "إلغاء",
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        if (isFullDownloading) {
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            LinearProgressIndicator(
+                                                progress = fullDownloadProgress,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(8.dp)
+                                                    .clip(RoundedCornerShape(4.dp)),
+                                                color = MaterialTheme.colorScheme.primary,
+                                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = fullDownloadStatus,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                Text(
+                                                    text = "${(fullDownloadProgress * 100).toInt()}%",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        } else if (!allDownloaded) {
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Button(
+                                                onClick = { viewModel.startFullDownload() },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary
+                                                )
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CloudDownload,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "تحميل المصحف ليعمل بدون إنترنت",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        } else {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "القارئ الحالي محمل بالكامل: $selectedReciterName",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
                                 
                                 // Filter suras list by search query
                                 val filteredSuras = remember(searchQuery) {
