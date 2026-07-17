@@ -26,6 +26,13 @@ import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.*
 
+data class QuranBookmark(
+    val suraId: Int,
+    val suraName: String,
+    val verseIndex: Int,
+    val timestamp: Long
+)
+
 class HayatyViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = HayatyRepository(
@@ -914,6 +921,144 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
         prefs.edit().putInt("FutureQuranBaseline", baseline).apply()
     }
 
+    // --- Quran Bookmarks State ---
+    private val _quranBookmarks = MutableStateFlow<List<QuranBookmark>>(emptyList())
+    val quranBookmarks: StateFlow<List<QuranBookmark>> = _quranBookmarks.asStateFlow()
+
+    fun loadQuranBookmarks() {
+        val bookmarksStr = prefs.getString("quran_bookmarks_list_v3", "") ?: ""
+        if (bookmarksStr.isEmpty()) {
+            _quranBookmarks.value = emptyList()
+            return
+        }
+        val list = mutableListOf<QuranBookmark>()
+        bookmarksStr.split(";;;").forEach { item ->
+            val parts = item.split("|")
+            if (parts.size >= 4) {
+                try {
+                    list.add(
+                        QuranBookmark(
+                            suraId = parts[0].toInt(),
+                            verseIndex = parts[1].toInt(),
+                            timestamp = parts[2].toLong(),
+                            suraName = parts[3]
+                        )
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+        _quranBookmarks.value = list
+    }
+
+    fun addQuranBookmark(suraId: Int, suraName: String, verseIndex: Int) {
+        val currentList = _quranBookmarks.value.toMutableList()
+        // Remove existing bookmark for same sura & verse to put the newly updated one at the top
+        currentList.removeAll { it.suraId == suraId && it.verseIndex == verseIndex }
+        currentList.add(0, QuranBookmark(suraId, suraName, verseIndex, System.currentTimeMillis()))
+        saveQuranBookmarks(currentList)
+    }
+
+    fun removeQuranBookmark(suraId: Int, verseIndex: Int) {
+        val currentList = _quranBookmarks.value.filterNot { it.suraId == suraId && it.verseIndex == verseIndex }
+        saveQuranBookmarks(currentList)
+    }
+
+    private fun saveQuranBookmarks(list: List<QuranBookmark>) {
+        _quranBookmarks.value = list
+        val joined = list.joinToString(";;;") { "${it.suraId}|${it.verseIndex}|${it.timestamp}|${it.suraName}" }
+        prefs.edit().putString("quran_bookmarks_list_v3", joined).apply()
+    }
+
+    // --- Daily Quran Recitation Progress Tracker State ---
+    private val _quranPagesReadToday = MutableStateFlow(0)
+    val quranPagesReadToday: StateFlow<Int> = _quranPagesReadToday.asStateFlow()
+
+    private val _quranDailyGoalPages = MutableStateFlow(prefs.getInt("quran_daily_goal_pages", 4))
+    val quranDailyGoalPages: StateFlow<Int> = _quranDailyGoalPages.asStateFlow()
+
+    private val _quranStreakDays = MutableStateFlow(0)
+    val quranStreakDays: StateFlow<Int> = _quranStreakDays.asStateFlow()
+
+    fun loadQuranProgress() {
+        val today = getTodayDateString()
+        _quranPagesReadToday.value = prefs.getInt("quran_pages_read_$today", 0)
+        _quranDailyGoalPages.value = prefs.getInt("quran_daily_goal_pages", 4)
+        _quranStreakDays.value = calculateQuranStreak()
+    }
+
+    fun addPagesRead(pages: Int) {
+        val today = getTodayDateString()
+        val currentRead = prefs.getInt("quran_pages_read_$today", 0)
+        val newRead = maxOf(0, currentRead + pages)
+        prefs.edit().putInt("quran_pages_read_$today", newRead).apply()
+        _quranPagesReadToday.value = newRead
+        _quranStreakDays.value = calculateQuranStreak()
+
+        // Also check if we reached the goal. If so, automatically mark the "الورد اليومي" habit as completed if it exists!
+        if (newRead >= _quranDailyGoalPages.value) {
+            viewModelScope.launch {
+                repository.allHabits.first().find { it.name.contains("الورد اليومي") || it.name.contains("القرآن") }?.let { habit ->
+                    val todayLogs = repository.getLogsForDate(today).first()
+                    if (todayLogs.none { it.habitId == habit.id }) {
+                        // Mark habit completed
+                        repository.insertHabitLog(HabitLog(habitId = habit.id, date = today))
+                    }
+                }
+            }
+        }
+    }
+
+    fun setQuranDailyGoal(pages: Int) {
+        val validPages = maxOf(1, pages)
+        prefs.edit().putInt("quran_daily_goal_pages", validPages).apply()
+        _quranDailyGoalPages.value = validPages
+        _quranStreakDays.value = calculateQuranStreak()
+    }
+
+    private fun calculateQuranStreak(): Int {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val cal = Calendar.getInstance()
+        var streak = 0
+        
+        // Start checking from today
+        val todayStr = sdf.format(cal.time)
+        val todayRead = prefs.getInt("quran_pages_read_$todayStr", 0)
+        val goal = prefs.getInt("quran_daily_goal_pages", 4)
+
+        if (todayRead >= goal) {
+            streak++
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+            while (true) {
+                val dateStr = sdf.format(cal.time)
+                val read = prefs.getInt("quran_pages_read_$dateStr", 0)
+                if (read >= goal) {
+                    streak++
+                    cal.add(Calendar.DAY_OF_YEAR, -1)
+                } else {
+                    break
+                }
+                if (streak > 365) break // safety guard
+            }
+        } else {
+            // If today is not completed, check if yesterday was completed. If so, streak is preserved (excluding today).
+            cal.add(Calendar.DAY_OF_YEAR, -1)
+            while (true) {
+                val dateStr = sdf.format(cal.time)
+                val read = prefs.getInt("quran_pages_read_$dateStr", 0)
+                if (read >= goal) {
+                    streak++
+                    cal.add(Calendar.DAY_OF_YEAR, -1)
+                } else {
+                    break
+                }
+                if (streak > 365) break // safety guard
+            }
+        }
+        return streak
+    }
+
     // --- Focus Mode State ---
     private val _isFocusActive = MutableStateFlow(false)
     val isFocusActive: StateFlow<Boolean> = _isFocusActive.asStateFlow()
@@ -952,6 +1097,8 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             updateMonthlyHabitAlertState()
             loadPostPrayerQuranStatus()
             refreshDownloadedSuras()
+            loadQuranBookmarks()
+            loadQuranProgress()
             triggerApiPrayerTimesFetch()
 
             updateCurrentTimeOfDay()
@@ -989,6 +1136,9 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+            // Trigger home screen widget updates
+            com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+            com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
         }
     }
 
@@ -1002,6 +1152,9 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+            // Trigger home screen widget updates
+            com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+            com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
         }
     }
 
@@ -1014,6 +1167,9 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+            // Trigger home screen widget updates
+            com.example.widget.HayatyWidgetProvider.triggerUpdate(getApplication())
+            com.example.widget.HayatyTasksWidgetProvider.triggerUpdate(getApplication())
         }
     }
 

@@ -51,6 +51,8 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.example.widget.UPDATE_WIDGET_DATA" />
+                <action android:name="com.example.widget.TOGGLE_CITY" />
+                <action android:name="com.example.widget.INCREMENT_TASBIH" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -65,6 +67,7 @@
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.example.widget.UPDATE_WIDGET_DATA" />
                 <action android:name="com.example.widget.TOGGLE_TASK_COMPLETE" />
+                <action android:name="com.example.widget.DELETE_TASK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

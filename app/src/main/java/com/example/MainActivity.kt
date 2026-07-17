@@ -225,8 +225,16 @@ fun HayatyApp(viewModel: HayatyViewModel) {
                     AnimatedContent(
                         targetState = currentTab,
                         transitionSpec = {
-                            fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
-                            fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                            val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                            val enterSlide = slideInHorizontally(
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy),
+                                initialOffsetX = { width -> width * direction }
+                            ) + fadeIn(animationSpec = tween(220, easing = LinearOutSlowInEasing))
+                            val exitSlide = slideOutHorizontally(
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                targetOffsetX = { width -> -width * direction }
+                            ) + fadeOut(animationSpec = tween(220, easing = FastOutLinearInEasing))
+                            enterSlide togetherWith exitSlide
                         },
                         modifier = Modifier.padding(innerPadding).fillMaxSize(),
                         label = "TabTransition"
@@ -338,8 +346,10 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
     }
 
     var activeTaskFilter by remember { mutableStateOf("remaining") } // "all", "remaining", "completed"
+    var activeCategoryFilter by remember { mutableStateOf("الكل") }
     var quickTaskTitle by remember { mutableStateOf("") }
     var quickTaskCategory by remember { mutableStateOf("عام") }
+    var homeSubTab by remember { mutableStateOf(0) } // 0 = Prayer & Worship, 1 = Tasks & Habits
 
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val formattedDate = remember(appLanguage) {
@@ -819,13 +829,93 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
         }
         }
 
-        // --- PRAYER TIMES WIDGET ---
-        if (showPrayerWidget) {
-            item {
+        // --- CUSTOM MODERN ISLAMIC SUB-TABS SELECTOR ---
+        item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("prayer_widget"),
+                    .padding(vertical = 6.dp)
+                    .testTag("home_sub_tabs_card"),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val tabStyleActive = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                    val tabStyleInactive = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Button(
+                        onClick = { homeSubTab = 0 },
+                        colors = if (homeSubTab == 0) tabStyleActive else tabStyleInactive,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .weight(1.1f)
+                            .height(48.dp)
+                            .testTag("tab_prayers"),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("🕌", fontSize = 16.sp)
+                            Text(
+                                text = "العبادات والمواقيت",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { homeSubTab = 1 },
+                        colors = if (homeSubTab == 1) tabStyleActive else tabStyleInactive,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("tab_tasks"),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("🎯", fontSize = 16.sp)
+                            Text(
+                                text = "المهام والإنتاجية",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- PRAYER TIMES WIDGET ---
+        if (showPrayerWidget) {
+            item {
+                AnimatedVisibility(
+                    visible = (homeSubTab == 0),
+                    enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("prayer_widget"),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
@@ -1046,6 +1136,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                     }
                 }
+                }
             }
         }
         }
@@ -1053,7 +1144,12 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
         // --- POST-PRAYER QURAN TRACKER WIDGET ---
         if (showQuranTracker) {
             item {
-            val quranStatus by viewModel.quranPostPrayerStatus.collectAsStateWithLifecycle()
+                AnimatedVisibility(
+                    visible = (homeSubTab == 0),
+                    enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
+                ) {
+                    val quranStatus by viewModel.quranPostPrayerStatus.collectAsStateWithLifecycle()
             val totalCompleted = quranStatus.values.count { it }
             val totalPrayers = 5
 
@@ -1277,6 +1373,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                     }
                 }
+                }
             }
         }
         }
@@ -1284,7 +1381,12 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
         // --- DAILY FIQH QUESTION OF THE DAY WIDGET ---
         if (showFiqhWidget) {
             item {
-            val todayDateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                AnimatedVisibility(
+                    visible = (homeSubTab == 0),
+                    enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
+                ) {
+                    val todayDateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
             val context = androidx.compose.ui.platform.LocalContext.current
             val prefs = remember(context) { context.getSharedPreferences("HayatyPrefs", android.content.Context.MODE_PRIVATE) }
             var isFiqhReadToday by remember(todayDateStr) { mutableStateOf(prefs.getBoolean("FiqhReadMark_$todayDateStr", false)) }
@@ -1491,6 +1593,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                     }
                 }
+                }
             }
         }
         }
@@ -1498,7 +1601,12 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
         // --- HABIT TRACKER INTERACTIVE WIDGET ---
         if (showHabitWidget) {
             item {
-            var quickHabitName by remember { mutableStateOf("") }
+                AnimatedVisibility(
+                    visible = (homeSubTab == 1),
+                    enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
+                ) {
+                    var quickHabitName by remember { mutableStateOf("") }
             val todayHabitLogs by viewModel.todayHabitLogs.collectAsStateWithLifecycle()
 
             Card(
@@ -1512,6 +1620,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    val completedCount = habits.count { h -> todayHabitLogs.any { it.habitId == h.id } }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1528,7 +1637,6 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
-                            val completedCount = habits.count { h -> todayHabitLogs.any { it.habitId == h.id } }
                             Text(
                                 text = "مكتمل: $completedCount من ${habits.size}",
                                 fontSize = 11.sp,
@@ -1538,10 +1646,91 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // --- HIGH-FIDELITY MODERN VISUAL PROGRESS SECTION ---
+                    val totalHabits = habits.size
+                    val progressRatio = if (totalHabits > 0) completedCount.toFloat() / totalHabits else 0f
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = progressRatio,
+                        animationSpec = spring(stiffness = Spring.StiffnessLow),
+                        label = "HabitProgress"
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "معدل الالتزام اليومي",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${(progressRatio * 100).toInt()}%",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(12.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(fraction = animatedProgress)
+                                    .clip(CircleShape)
+                                    .background(
+                                        brush = Brush.horizontalGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                                MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+
+                        if (totalHabits > 0) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val motivationalMsg = when {
+                                progressRatio == 1.0f -> "أحسنت! لقد أتممت جميع عاداتك اليوم بنجاح تام! 🎉"
+                                progressRatio >= 0.7f -> "رائع جداً! أوشكت على إتمام جميع عاداتك اليوم، استمر! 💪"
+                                progressRatio >= 0.4f -> "بداية ممتازة! واصل العمل لتنمية سلسلة التزامك 🌱"
+                                progressRatio > 0f -> "خطوة مباركة! كل خطوة صغيرة تقربك من التميز والالتزام ✨"
+                                else -> "انطلق اليوم وسجل أول عادة لتنمية سلسلة التزامك المباركة! 🚀"
+                            }
+                            Text(
+                                text = motivationalMsg,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "اضغط على زر النجمة لتسجيل التزامك اليومي وتنمية سلسلة أيامك 🌱",
+                        text = "اضغط على زر الأيقونة لتسجيل التزامك اليومي وتنمية سلسلة أيامك 🌱",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )
@@ -1802,17 +1991,23 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     )
                 }
             }
+                }
         }
         }
 
         // --- TASKS LIST WIDGET (To-Do List Manager) ---
         if (showTasksWidget) {
             item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .testTag("home_tasks_widget"),
+                AnimatedVisibility(
+                    visible = (homeSubTab == 1),
+                    enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .testTag("home_tasks_widget"),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
@@ -1887,12 +2082,12 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     )
 
                     // Quick Category Badges Selection Flow
-                    Row(
+                    LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val categories = listOf("عام", "عمل", "دراسة", "عبادة", "صحة")
-                        categories.forEach { cat ->
+                        val categories = listOf("عام", "عمل", "شخصي", "دراسة", "عبادة", "صحة")
+                        items(categories) { cat ->
                             val isSel = quickTaskCategory == cat
                             Box(
                                 modifier = Modifier
@@ -1927,10 +2122,11 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                             .padding(2.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        val tasksForCount = if (activeCategoryFilter == "الكل") tasks else tasks.filter { it.category == activeCategoryFilter }
                         val filters = listOf(
-                            Triple("remaining", "المتبقية ⏳", tasks.count { !it.isCompleted }),
-                            Triple("completed", "المكتملة ✓", tasks.count { it.isCompleted }),
-                            Triple("all", "الكل 📁", tasks.size)
+                            Triple("remaining", "المتبقية ⏳", tasksForCount.count { !it.isCompleted }),
+                            Triple("completed", "المكتملة ✓", tasksForCount.count { it.isCompleted }),
+                            Triple("all", "الكل 📁", tasksForCount.size)
                         )
                         filters.forEach { (filterType, label, count) ->
                             val isSel = activeTaskFilter == filterType
@@ -1943,7 +2139,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                     .padding(vertical = 6.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
+                                  Text(
                                     text = "$label ($count)",
                                     fontSize = 11.sp,
                                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
@@ -1953,13 +2149,79 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                         }
                     }
 
+                    // Visual Category Filter Badges Row
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val catFilters = listOf("الكل", "عام", "عمل", "شخصي", "دراسة", "عبادة", "صحة")
+                        items(catFilters) { cat ->
+                            val isSel = activeCategoryFilter == cat
+                            val count = if (cat == "الكل") {
+                                tasks.size
+                            } else {
+                                tasks.count { it.category == cat }
+                            }
+                            
+                            val badgeBg = if (isSel) {
+                                when (cat) {
+                                    "عمل" -> Color(0xFF1565C0)
+                                    "شخصي" -> Color(0xFF7B1FA2)
+                                    "دراسة" -> Color(0xFFE65100)
+                                    "عبادة" -> Color(0xFF2E7D32)
+                                    "صحة" -> Color(0xFFC2185B)
+                                    "الكل" -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            }
+                            val badgeText = if (isSel) {
+                                Color.White
+                            } else {
+                                when (cat) {
+                                    "عمل" -> Color(0xFF1565C0)
+                                    "شخصي" -> Color(0xFF7B1FA2)
+                                    "دراسة" -> Color(0xFFE65100)
+                                    "عبادة" -> Color(0xFF2E7D32)
+                                    "صحة" -> Color(0xFFC2185B)
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(badgeBg)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSel) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { activeCategoryFilter = cat }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "$cat ($count)",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = badgeText
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
 
                     // --- FILTERED TASKS RENDERING LIST INSIDE CARD ---
-                    val filteredTasks = when (activeTaskFilter) {
+                    var filteredTasks = when (activeTaskFilter) {
                         "remaining" -> tasks.filter { !it.isCompleted }
                         "completed" -> tasks.filter { it.isCompleted }
                         else -> tasks
+                    }
+                    if (activeCategoryFilter != "الكل") {
+                        filteredTasks = filteredTasks.filter { it.category == activeCategoryFilter }
                     }
 
                     if (filteredTasks.isEmpty()) {
@@ -1978,9 +2240,18 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 val emptyLabel = when (activeTaskFilter) {
-                                    "remaining" -> "لا متبقي اليوم! يومك مميز ونظيف 🌱"
-                                    "completed" -> "لم تنجز مهاماً اليوم بعد. ابدأ الآن! 💪"
-                                    else -> "قائمتك فارغة الآن. أضف مهامك الأولى!"
+                                    "remaining" -> {
+                                        if (activeCategoryFilter != "الكل") "لا مهام متبقية في تصنيف '$activeCategoryFilter'! 🎉"
+                                        else "لا متبقي اليوم! يومك مميز ونظيف 🌱"
+                                    }
+                                    "completed" -> {
+                                        if (activeCategoryFilter != "الكل") "لم تنجز مهاماً في تصنيف '$activeCategoryFilter' بعد."
+                                        else "لم تنجز مهاماً اليوم بعد. ابدأ الآن! 💪"
+                                    }
+                                    else -> {
+                                        if (activeCategoryFilter != "الكل") "لا توجد مهام في تصنيف '$activeCategoryFilter'."
+                                        else "قائمتك فارغة الآن. أضف مهامك الأولى!"
+                                    }
                                 }
                                 Text(
                                     text = emptyLabel,
@@ -2007,6 +2278,7 @@ fun HomeScreen(viewModel: HayatyViewModel, onNavigateToFocus: () -> Unit) {
                     }
                 }
             }
+                }
         }
         }
 
@@ -2261,6 +2533,7 @@ fun TaskRowItem(task: Task, onToggle: () -> Unit, onDelete: () -> Unit) {
                             .background(
                                 when (task.category) {
                                     "عمل" -> Color(0xFFE3F2FD)
+                                    "شخصي" -> Color(0xFFF3E5F5)
                                     "دراسة" -> Color(0xFFFFF3E0)
                                     "عبادة" -> Color(0xFFE8F5E9)
                                     "صحة" -> Color(0xFFFCE4EC)
@@ -2275,6 +2548,7 @@ fun TaskRowItem(task: Task, onToggle: () -> Unit, onDelete: () -> Unit) {
                             fontWeight = FontWeight.Bold,
                             color = when (task.category) {
                                 "عمل" -> Color(0xFF1565C0)
+                                "شخصي" -> Color(0xFF7B1FA2)
                                 "دراسة" -> Color(0xFFE65100)
                                 "عبادة" -> Color(0xFF2E7D32)
                                 "صحة" -> Color(0xFFC2185B)
@@ -5223,17 +5497,36 @@ fun QuranScreen(viewModel: HayatyViewModel) {
             Spacer(modifier = Modifier.height(12.dp))
 
             // Tab Content Router
-            Box(
+            AnimatedContent(
+                targetState = activeTab,
+                transitionSpec = {
+                    val direction = if (targetState > initialState) 1 else -1
+                    val enterSlide = slideInHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy),
+                        initialOffsetX = { width -> width * direction }
+                    ) + fadeIn(animationSpec = tween(220, easing = LinearOutSlowInEasing))
+                    val exitSlide = slideOutHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        targetOffsetX = { width -> -width * direction }
+                    ) + fadeOut(animationSpec = tween(220, easing = FastOutLinearInEasing))
+                    enterSlide togetherWith exitSlide
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 16.dp)
-            ) {
-                when (activeTab) {
+                    .padding(horizontal = 16.dp),
+                label = "QuranSubTabTransition"
+            ) { targetTab ->
+                when (targetTab) {
                     0 -> { // ---------------------- TAB 0: QURAN LIST ----------------------
                         var searchQuery by remember { mutableStateOf("") }
                         var searchMode by remember { mutableStateOf(0) } // 0 = Sura names, 1 = Verse Content
                         val loadedSuraVerses by viewModel.loadedSuraVerses.collectAsStateWithLifecycle()
+                        
+                        val quranBookmarks by viewModel.quranBookmarks.collectAsStateWithLifecycle()
+                        val quranPagesReadToday by viewModel.quranPagesReadToday.collectAsStateWithLifecycle()
+                        val quranDailyGoalPages by viewModel.quranDailyGoalPages.collectAsStateWithLifecycle()
+                        val quranStreakDays by viewModel.quranStreakDays.collectAsStateWithLifecycle()
 
                         val allLoadedVerses = remember(loadedSuraVerses) {
                             val list = mutableListOf<Triple<Sura, Int, String>>() // Sura, VerseIndex, VerseText
@@ -5518,6 +5811,287 @@ fun QuranScreen(viewModel: HayatyViewModel) {
                                         .fillMaxWidth()
                                         .weight(1f)
                                 ) {
+                                    // --- 1. DAILY PROGRESS TRACKER CARD ---
+                                    item {
+                                        var isGoalEditExpanded by remember { mutableStateOf(false) }
+                                        var goalInputValue by remember { mutableStateOf(quranDailyGoalPages.toString()) }
+
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("quran_daily_progress_card"),
+                                            shape = RoundedCornerShape(24.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                        ) {
+                                            Column(modifier = Modifier.padding(18.dp)) {
+                                                // Header & Streak Row
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Text("📈", fontSize = 22.sp)
+                                                        Text(
+                                                            text = "ورد التلاوة اليومي",
+                                                            fontSize = 15.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    }
+                                                    if (quranStreakDays > 0) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(12.dp))
+                                                                .background(Color(0xFFFFF3E0))
+                                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "🔥 $quranStreakDays يوم متتالي!",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                color = Color(0xFFE65100)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(12.dp))
+
+                                                // Progress text & bar
+                                                val progressFraction = if (quranDailyGoalPages > 0) {
+                                                    quranPagesReadToday.toFloat() / quranDailyGoalPages.toFloat()
+                                                } else {
+                                                    0f
+                                                }
+                                                val isGoalCompleted = quranPagesReadToday >= quranDailyGoalPages
+
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = if (isGoalCompleted) "أحسنت! تم إنجاز هدف التلاوة اليوم 🎉"
+                                                               else "أنجزت $quranPagesReadToday من أصل $quranDailyGoalPages صفحات اليوم",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = if (isGoalCompleted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Text(
+                                                        text = "${(progressFraction * 100).toInt()}%",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+
+                                                Spacer(modifier = Modifier.height(8.dp))
+
+                                                LinearProgressIndicator(
+                                                    progress = { minOf(1f, progressFraction) },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(8.dp)
+                                                        .clip(RoundedCornerShape(4.dp)),
+                                                    color = if (isGoalCompleted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary,
+                                                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                                )
+
+                                                Spacer(modifier = Modifier.height(14.dp))
+
+                                                // Log controls row
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = { viewModel.addPagesRead(1) },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                                        modifier = Modifier.weight(1f).height(38.dp)
+                                                    ) {
+                                                        Text("سجل صفحة +1 📖", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = { viewModel.addPagesRead(-1) },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                                                        modifier = Modifier.height(38.dp),
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                                                    ) {
+                                                        Text("تراجع -1", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    IconButton(
+                                                        onClick = { 
+                                                            isGoalEditExpanded = !isGoalEditExpanded 
+                                                            goalInputValue = quranDailyGoalPages.toString()
+                                                        },
+                                                        modifier = Modifier
+                                                            .size(38.dp)
+                                                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+                                                    ) {
+                                                        Text("⚙️", fontSize = 13.sp)
+                                                    }
+                                                }
+
+                                                // Inline Edit Goal Area
+                                                AnimatedVisibility(visible = isGoalEditExpanded) {
+                                                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                                                        HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                                                        Spacer(modifier = Modifier.height(8.dp))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "هدف اليوم (صفحات):",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                            OutlinedTextField(
+                                                                value = goalInputValue,
+                                                                onValueChange = { goalInputValue = it.filter { char -> char.isDigit() } },
+                                                                modifier = Modifier.width(60.dp).height(38.dp),
+                                                                singleLine = true,
+                                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, textAlign = TextAlign.Center),
+                                                                colors = OutlinedTextFieldDefaults.colors(
+                                                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                                                                )
+                                                            )
+                                                            Button(
+                                                                onClick = {
+                                                                    goalInputValue.toIntOrNull()?.let {
+                                                                        viewModel.setQuranDailyGoal(it)
+                                                                        isGoalEditExpanded = false
+                                                                    }
+                                                                },
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                modifier = Modifier.height(34.dp),
+                                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                                            ) {
+                                                                Text("حفظ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // --- 2. SAVED BOOKMARKS HORIZONTAL ROW ---
+                                    if (quranBookmarks.isNotEmpty()) {
+                                        item {
+                                            Column(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "🔖 العلامات المرجعية المحفوظة",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                    Text(
+                                                        text = "${quranBookmarks.size} علامات",
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+
+                                                Spacer(modifier = Modifier.height(8.dp))
+
+                                                LazyRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    items(quranBookmarks) { bookmark ->
+                                                        Card(
+                                                            modifier = Modifier
+                                                                .width(160.dp)
+                                                                .clickable {
+                                                                    selectedSura = QuranData.suras.find { it.id == bookmark.suraId }
+                                                                    targetFirstVerseIndex = bookmark.verseIndex
+                                                                },
+                                                            shape = RoundedCornerShape(16.dp),
+                                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                                                        ) {
+                                                            Box(modifier = Modifier.fillMaxSize()) {
+                                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                                    Text(
+                                                                        text = "سورة ${bookmark.suraName}",
+                                                                        fontSize = 13.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = MaterialTheme.colorScheme.primary
+                                                                    )
+                                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                                    Text(
+                                                                        text = "الصفحة ${ (bookmark.verseIndex / 8) + 1 } (آية ${bookmark.verseIndex + 1})",
+                                                                        fontSize = 11.sp,
+                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    )
+                                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                                    
+                                                                    // Time format
+                                                                    val relativeTime = remember(bookmark.timestamp) {
+                                                                        val diff = System.currentTimeMillis() - bookmark.timestamp
+                                                                        when {
+                                                                            diff < 60_000 -> "الآن"
+                                                                            diff < 3600_000 -> "${diff / 60_000} د"
+                                                                            diff < 86400_000 -> "${diff / 3600_000} سا"
+                                                                            else -> "${diff / 86400_000} يوم"
+                                                                        }
+                                                                    }
+                                                                    Text(
+                                                                        text = "حفظت: $relativeTime",
+                                                                        fontSize = 9.sp,
+                                                                        color = MaterialTheme.colorScheme.outline
+                                                                    )
+                                                                }
+
+                                                                // Small X button to delete bookmark
+                                                                IconButton(
+                                                                    onClick = { viewModel.removeQuranBookmark(bookmark.suraId, bookmark.verseIndex) },
+                                                                    modifier = Modifier
+                                                                        .align(Alignment.TopEnd)
+                                                                        .size(28.dp)
+                                                                        .padding(4.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.Close,
+                                                                        contentDescription = "حذف علامة",
+                                                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                                                                        modifier = Modifier.size(14.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // --- 3. SURA LIST HEADER ---
+                                    item {
+                                        Text(
+                                            text = "📖 سور القرآن الكريم",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                                        )
+                                    }
+
                                     items(filteredSuras) { sura ->
                                         val isDownloaded = downloadedSuras[sura.id] == true
                                         val progress = downloadProgress[sura.id]
@@ -6858,6 +7432,19 @@ fun QuranReaderScreen(
     var inSuraSearchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
 
+    val versesPerPage = 8
+    val totalPages = if (versesList.isNotEmpty()) (versesList.size + versesPerPage - 1) / versesPerPage else 1
+    
+    val initialPage = remember(sura.id, initialTargetVerseIndex, versesList.size) {
+        if (initialTargetVerseIndex != null && initialTargetVerseIndex in 0 until versesList.size) {
+            initialTargetVerseIndex / versesPerPage
+        } else {
+            0
+        }
+    }
+    var currentPage by remember(sura.id, initialPage) { mutableStateOf(initialPage) }
+    var highlightedVerseIndex by remember(sura.id, initialTargetVerseIndex) { mutableStateOf(initialTargetVerseIndex) }
+
     // Fetch verses if list is empty and we aren't already loading
     LaunchedEffect(sura.id) {
         if (sura.verses.isEmpty() && !loadedSuraVerses.containsKey(sura.id)) {
@@ -6906,6 +7493,30 @@ fun QuranReaderScreen(
             val isAudioPlaying by viewModel.isAudioPlaying.collectAsStateWithLifecycle()
             
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Bookmark Page button
+                if (versesList.isNotEmpty()) {
+                    val quranBookmarks by viewModel.quranBookmarks.collectAsStateWithLifecycle()
+                    val currentVerseIndex = currentPage * versesPerPage
+                    val isBookmarked = quranBookmarks.any { it.suraId == sura.id && it.verseIndex == currentVerseIndex }
+                    IconButton(
+                        onClick = {
+                            if (isBookmarked) {
+                                viewModel.removeQuranBookmark(sura.id, currentVerseIndex)
+                                android.widget.Toast.makeText(context, "تم إزالة العلامة المرجعية", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                viewModel.addQuranBookmark(sura.id, sura.name, currentVerseIndex)
+                                android.widget.Toast.makeText(context, "تم حفظ الصفحة ${currentPage + 1} كعلامة مرجعية 🔖", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                            contentDescription = "علامة مرجعية",
+                            tint = if (isBookmarked) Color(0xFFD4AF37) else MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+
                 IconButton(
                     onClick = { 
                         isSearchExpanded = !isSearchExpanded
@@ -7055,19 +7666,6 @@ fun QuranReaderScreen(
                     }
                 }
             } else {
-                val versesPerPage = 8
-                val totalPages = (versesList.size + versesPerPage - 1) / versesPerPage
-                
-                val initialPage = remember(sura.id, initialTargetVerseIndex) {
-                    if (initialTargetVerseIndex != null && initialTargetVerseIndex in 0 until versesList.size) {
-                        initialTargetVerseIndex / versesPerPage
-                    } else {
-                        0
-                    }
-                }
-                var currentPage by remember(sura.id, initialPage) { mutableStateOf(initialPage) }
-                var highlightedVerseIndex by remember(sura.id, initialTargetVerseIndex) { mutableStateOf(initialTargetVerseIndex) }
-
                 val pageStart = currentPage * versesPerPage
                 val pageEnd = minOf(pageStart + versesPerPage, versesList.size)
                 val pageVerses = versesList.subList(pageStart, pageEnd)
@@ -7308,7 +7906,40 @@ fun QuranReaderScreen(
                                 Text("الصفحة السابقة ◀", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                             
-                            Spacer(modifier = Modifier.width(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Center: page progress indicator & register progress
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            ) {
+                                Text(
+                                    text = "صفحة ${currentPage + 1} من $totalPages",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1B5E20)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFFE8F5E9))
+                                        .clickable {
+                                            viewModel.addPagesRead(1)
+                                            android.widget.Toast.makeText(context, "تم تسجيل قراءة صفحة واحدة! 📖", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "قرأت الصفحة 📖",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2E7D32)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
 
                             Button(
                                 onClick = {
@@ -8360,7 +8991,7 @@ fun AddTaskDialog(onDismiss: () -> Unit, onConfirm: (String, String, String, Boo
     var selectedCategory by remember { mutableStateOf("عام") }
     var isAppointment by remember { mutableStateOf(false) }
 
-    val categories = listOf("عام", "عمل", "دراسة", "عبادة", "صحة")
+    val categories = listOf("عام", "عمل", "شخصي", "دراسة", "عبادة", "صحة")
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -9501,6 +10132,7 @@ fun SettingsDialog(
                     Quadruple("جدول مواقيت الصلاة والقبلة", showPrayerWidget, { b: Boolean -> viewModel.setShowPrayerWidget(b) }, "schedule"),
                     Quadruple("متابع ختمة القرآن الكريم", showQuranTracker, { b: Boolean -> viewModel.setShowQuranTracker(b) }, "book"),
                     Quadruple("فقرة سؤال الفقه المتجدد", showFiqhWidget, { b: Boolean -> viewModel.setShowFiqhWidget(b) }, "menu_book"),
+                    Quadruple("متعقب العادات والالتزام اليومي", showHabitWidget, { b: Boolean -> viewModel.setShowHabitWidget(b) }, "star"),
                     Quadruple("منظم المهام والمسؤوليات اليومية", showTasksWidget, { b: Boolean -> viewModel.setShowTasksWidget(b) }, "checklist")
                 )
 
