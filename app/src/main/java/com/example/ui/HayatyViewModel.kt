@@ -2,6 +2,11 @@ package com.example.ui
 
 import android.app.Application
 import android.app.usage.UsageStatsManager
+import android.app.NotificationManager
+import android.app.NotificationChannel
+import android.app.PendingIntent
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -64,6 +69,13 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
     val usageRecords: StateFlow<List<AppUsageRecord>> = _currentDate
         .flatMapLatest { date -> repository.getUsageForDate(date) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Screen Time AI Advice State ---
+    private val _screenTimeAiAdvice = MutableStateFlow<String?>(null)
+    val screenTimeAiAdvice: StateFlow<String?> = _screenTimeAiAdvice.asStateFlow()
+
+    private val _isScreenTimeAiLoading = MutableStateFlow(false)
+    val isScreenTimeAiLoading: StateFlow<Boolean> = _isScreenTimeAiLoading.asStateFlow()
 
     private val prefs = application.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
 
@@ -1513,6 +1525,56 @@ class HayatyViewModel(application: Application) : AndroidViewModel(application) 
                 )
             )
         }
+    }
+
+    fun getScreenTimeAiAdvice() {
+        viewModelScope.launch {
+            _isScreenTimeAiLoading.value = true
+            try {
+                val currentUsage = usageRecords.value
+                val advice = GeminiClient.getScreenTimeAdvice(currentUsage)
+                _screenTimeAiAdvice.value = advice
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _screenTimeAiAdvice.value = "حدث خطأ أثناء الاتصال بمستشار الذكاء الاصطناعي: ${e.message}"
+            } finally {
+                _isScreenTimeAiLoading.value = false
+            }
+        }
+    }
+
+    fun sendScreenTimeNotification(title: String, message: String) {
+        val context = getApplication<Application>()
+        val channelId = "screen_time_wellbeing_channel"
+        val notificationId = 10099
+
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setAutoCancel(true)
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "الصحة الرقمية والتركيز",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "تنبيهات وتذكيرات لتقليل استخدام الهاتف وصيانة الوقت"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+        notificationManager.notify(notificationId, builder.build())
     }
 
     private suspend fun generateMockHistory() {

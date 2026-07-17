@@ -4837,6 +4837,8 @@ fun getWeeklyPerformanceJson(tasks: List<Task>, habitLogs: List<HabitLog>): Stri
 @Composable
 fun FocusScreen(viewModel: HayatyViewModel) {
     val usageRecords by viewModel.usageRecords.collectAsStateWithLifecycle()
+    val aiAdvice by viewModel.screenTimeAiAdvice.collectAsStateWithLifecycle()
+    val isAiLoading by viewModel.isScreenTimeAiLoading.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var blockDurationMinutes by remember { mutableStateOf(25f) }
     
@@ -5328,6 +5330,222 @@ fun FocusScreen(viewModel: HayatyViewModel) {
                         Icon(imageVector = Icons.Default.Lock, contentDescription = "قفل")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("تفعيل نمط التركيز العميق", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // --- AI-POWERED SCREEN TIME ADVISOR ---
+        item {
+            val prefs = context.getSharedPreferences("AzkarPrefs", Context.MODE_PRIVATE)
+            var alertLimitHours by remember { mutableStateOf(prefs.getFloat("ScreenTimeLimitHours", 2f)) }
+            var isAlertLimitEnabled by remember { mutableStateOf(prefs.getBoolean("ScreenTimeLimitEnabled", false)) }
+            
+            // Notification monitor when limit is exceeded
+            val totalMinutes = usageRecords.sumOf { it.durationMs } / 60000
+            LaunchedEffect(totalMinutes, isAlertLimitEnabled, alertLimitHours) {
+                if (isAlertLimitEnabled && totalMinutes >= (alertLimitHours * 60)) {
+                    val lastNotifiedDate = prefs.getString("LastScreenTimeLimitNotifiedDate", "")
+                    val today = viewModel.currentDate.value
+                    if (lastNotifiedDate != today) {
+                        viewModel.sendScreenTimeNotification(
+                            "⚠️ تنبيه تجاوز وقت الشاشة اليومي",
+                            "لقد استخدمت الهاتف اليوم لـ ${totalMinutes / 60} ساعة و ${totalMinutes % 60} دقيقة، وهو ما يتجاوز الحد المسموح به (${alertLimitHours.toInt()} ساعة)! خذ قسطاً من الراحة 🌾"
+                        )
+                        prefs.edit().putString("LastScreenTimeLimitNotifiedDate", today).apply()
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ai_screen_time_card"),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.08f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "ذكاء اصطناعي",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "🤖 مستشار العافية الرقمية بالذكاء الاصطناعي",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "تحليل الاستخدام المتقدم ونصائح ذكية مخصصة لتقليل التشتت",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // AI Suggestion loading & rendering
+                    if (isAiLoading) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Text(
+                                text = "يقوم الذكاء الاصطناعي بتحليل وقت الشاشة الخاص بك وصياغة توصيات تعافي خاصة بك...",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    } else if (aiAdvice != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                                .padding(14.dp)
+                        ) {
+                            Text(
+                                text = aiAdvice!!,
+                                fontSize = 12.sp,
+                                lineHeight = 20.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Right
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Action: Send to Notification system
+                            Button(
+                                onClick = {
+                                    // Parse a short summary or use a custom notification message
+                                    val lines = aiAdvice!!.split("\n")
+                                    val shortReminderLine = lines.firstOrNull { it.contains("🔔") }
+                                        ?.replace("🔔", "")?.trim()
+                                        ?: "الوقت أنفاس لا تعود.. ضع هاتفك الآن وعش لحظتك بوعي 🌾"
+                                    viewModel.sendScreenTimeNotification(
+                                        "🔔 تذكير الصحة الرقمية بالذكاء الاصطناعي",
+                                        shortReminderLine
+                                    )
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                modifier = Modifier.fillMaxWidth().height(38.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Notifications, contentDescription = "إشعار", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("إرسال التذكير الذكي للإشعارات 🔔", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { viewModel.getScreenTimeAiAdvice() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(imageVector = Icons.Default.Star, contentDescription = "نجمه", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("تحليل ذكي وتوليد خطة التعافي 🧠", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // -- LIMIT ALERT SETTING SECTION --
+                    Text(
+                        text = "⏰ منبه تجاوز حد الاستخدام اليومي",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "سيقوم النظام بإرسال إشعار تحذيري فوري في حال تخطي استخدام الهاتف الكلي للحد المحدد أدناه.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Switch(
+                                checked = isAlertLimitEnabled,
+                                onCheckedChange = {
+                                    isAlertLimitEnabled = it
+                                    prefs.edit().putBoolean("ScreenTimeLimitEnabled", it).apply()
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (isAlertLimitEnabled) "المنبه نشط ومراقب 🔒" else "المنبه معطل 🔓",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isAlertLimitEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Text(
+                            text = "الحد الأقصى: ${alertLimitHours.toInt()} ساعات",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    if (isAlertLimitEnabled) {
+                        Slider(
+                            value = alertLimitHours,
+                            onValueChange = {
+                                alertLimitHours = it
+                                prefs.edit().putFloat("ScreenTimeLimitHours", it).apply()
+                            },
+                            valueRange = 1f..6f,
+                            steps = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }

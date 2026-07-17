@@ -303,4 +303,86 @@ object GeminiClient {
             - واصل بناء سلسلة التزام قوية لعاداتك اليومية: (${habits.joinToString { it.name }}).
         """.trimIndent()
     }
+
+    suspend fun getScreenTimeAdvice(
+        usageRecords: List<AppUsageRecord>
+    ): String = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext getFallbackScreenTimeAdvice(usageRecords)
+        }
+
+        val usageStr = usageRecords.joinToString("\n") { "- ${it.appName}: ${it.durationMs / 60000} دقيقة" }
+
+        val prompt = """
+            أنت مستشار خبير ومحترف في الصحة الرقمية والتركيز، ومسؤول الإرشاد لرفاهية وقت الشاشة في تطبيق "حياتي" الإسلامي والإنتاجي.
+            قم بتحليل إحصائيات استخدام الهاتف المشتت التالية لهذا اليوم، وقدم نصائح مخصصة، عملية، وذكية للحد من استخدام الهاتف وتقليص المشتتات، وربط ذلك بالإنتاجية وحفظ الأوقات والعبادة باللغة العربية بأسلوب راقٍ، ملهم، وواضح.
+
+            إحصائيات استخدام تطبيقات الهاتف اليوم:
+            $usageStr
+
+            المطلوب منك صياغة رد يحتوي على الأقسام التالية بوضوح وبطريقة تفاعلية ملهمة:
+            1. 📊 **تشخيص حالة الاستخدام الحالي**: تقييم علمي لمستوى التشتت وتأثيره على صفاء الذهن بناءً على الأرقام أعلاه.
+            2. 💡 **خطة التحرر السريعة (توصيات مخصصة لكل تطبيق)**: نصائح ذكية وعملية مخصصة لكل تطبيق من التطبيقات الأكثر استهلاكاً لوقتك للحد من تصفحه (مثلاً: تفعيل تذكيرات النوم، استخدام نمط الشاشة الرمادية، حذف اختصارات التطبيق).
+            3. 🕋 **بدائل روحية وإنتاجية هادفة**: اقترح بدائل تعمر بها وقتك بدلاً من التمرير اللانهائي (مثل: تلاوة ورد القرآن، أذكار، رياضة، قراءة كتب هادفة).
+            4. 🔔 **رسالة تذكيرية قصيرة للإشعارات**: صغ رسالة تذكيرية قصيرة وموجزة جداً (أقل من 60 حرفاً) يمكن إرسالها للمستخدم كإشعار على هاتفه لتنبيهه وإيقاظ همته لتقليل الاستخدام الآن. تبدأ بـ "🔔 [رسالة التذكير]" في سطر منفصل وبسيط.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(
+                Content(
+                    parts = listOf(Part(text = prompt))
+                )
+            )
+        )
+
+        try {
+            val responseBody = RetrofitClient.service.generateContent(apiKey, request)
+            val jsonString = responseBody.string()
+            val jsonObject = JSONObject(jsonString)
+            val candidates = jsonObject.getJSONArray("candidates")
+            val firstCandidate = candidates.getJSONObject(0)
+            val content = firstCandidate.getJSONObject("content")
+            val parts = content.getJSONArray("parts")
+            val text = parts.getJSONObject(0).getString("text")
+            text
+        } catch (e: Exception) {
+            e.printStackTrace()
+            getFallbackScreenTimeAdvice(usageRecords)
+        }
+    }
+
+    private fun getFallbackScreenTimeAdvice(usageRecords: List<AppUsageRecord>): String {
+        val totalMinutes = usageRecords.sumOf { it.durationMs } / 60000
+        val topApps = usageRecords.sortedByDescending { it.durationMs }.take(3)
+        val topAppsStr = topApps.joinToString("، ") { "${it.appName} (${it.durationMs / 60000} د)" }
+        
+        return """
+            📊 **تشخيص حالة الاستخدام الحالي (التحليل المحلي):**
+            - إجمالي وقت الشاشة اليوم هو **${totalMinutes / 60} ساعة و ${totalMinutes % 60} دقيقة**.
+            - التطبيقات الأكثر استهلاكاً لوقتك هي: **$topAppsStr**.
+            - مستوى التشتت: ${if (totalMinutes > 150) "حرج جداً! هاتفك يلتهم يومك بنهم." else if (totalMinutes > 60) "متوسط. انتبه قبل الانزلاق في الفخ الرقمي." else "ممتاز! تحكم واعٍ ورائع لوقتك."}
+
+            💡 **خطة التحرر السريعة (توصيات مخصصة لكل تطبيق):**
+            ${topApps.joinToString("\n") { app ->
+                val mins = app.durationMs / 60000
+                val appAdvice = when {
+                    app.appName.contains("يوتيوب", true) -> "يوتيوب يسحبك عبر ميزة الفيديوهات القصيرة (Shorts) والتشغيل التلقائي. قم بتعطيل التشغيل التلقائي وحدد حداً يومياً بـ 20 دقيقة فقط."
+                    app.appName.contains("تيك", true) || app.appName.contains("تيك توك", true) -> "تيك توك مصمم للإدمان عبر التمرير اللانهائي المبرمج عصبياً. ننصحك باستخدام نمط الشاشة الرمادية لتقليل جاذبية الألوان أو حظر التطبيق مؤقتاً."
+                    app.appName.contains("إنستغرام", true) || app.appName.contains("انستقرام", true) || app.appName.contains("انستجرام", true) -> "إنستغرام يزيد من مقارنة الذات بالآخرين ويبدد انتباهك. احرص على تصفحه عبر المتصفح فقط أو احذف اختصاره من الشاشة الرئيسية لتصعيب الوصول إليه."
+                    app.appName.contains("واتساب", true) -> "واتساب يسرق الوقت عبر المحادثات غير الهامة والجروبات. كتم التنبيهات غير الضرورية وتحديد وقت محدد للرد والمراجعة أسبوعياً."
+                    else -> "تطبيق ${app.appName} يستهلك الكثير من وقتك ($mins دقيقة). اسأل نفسك قبل فتحه: هل هناك حاجة ملحة الآن أم هو هرب لملء الفراغ؟"
+                }
+                "- **${app.appName}**: $appAdvice"
+            }}
+
+            🕋 **بدائل روحية وإنتاجية هادفة:**
+            1. **الورد القرآني**: استبدل 15 دقيقة من التصفح بقراءة صفحتين من القرآن الكريم (تحقق لك 2000 حسنة على الأقل).
+            2. **مؤقت التركيز**: قم فوراً بتفعيل نمط التركيز في تطبيق حياتي لمدة 25 دقيقة لإنجاز مهمة معطلة.
+            3. **الاستغفار والذكر**: استغل فترات الانتقال بذكر الله بدلاً من فحص الهاتف اللاواعي.
+
+            🔔 **رسالة تذكيرية قصيرة للإشعارات:**
+            الوقت أنفاس لا تعود.. ضع هاتفك الآن وعش لحظتك بوعي 🌾
+        """.trimIndent()
+    }
 }
