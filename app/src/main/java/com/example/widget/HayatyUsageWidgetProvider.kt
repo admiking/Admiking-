@@ -95,6 +95,29 @@ class HayatyUsageWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        // Clean up when widget is removed from home screen
+        super.onDeleted(context, appWidgetIds)
+        try {
+            for (appWidgetId in appWidgetIds) {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                appWidgetManager.updateAppWidget(appWidgetId, RemoteViews(context.packageName, R.layout.hayaty_usage_widget))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onDisabled(context: Context) {
+        // Called when the last widget instance of this provider is deleted
+        super.onDisabled(context)
+        try {
+            // Clean up any global resources or listeners here
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     companion object {
         fun triggerUpdate(context: Context) {
             val intent = Intent(context, HayatyUsageWidgetProvider::class.java).apply {
@@ -162,7 +185,7 @@ private suspend fun updateUsageWidget(
     }
     val pendingApp = PendingIntent.getActivity(
         context,
-        301,
+        appWidgetId + 40000,
         appIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
@@ -174,7 +197,7 @@ private suspend fun updateUsageWidget(
     }
     val pendingRefresh = PendingIntent.getBroadcast(
         context,
-        302,
+        appWidgetId + 50000,
         refreshIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )

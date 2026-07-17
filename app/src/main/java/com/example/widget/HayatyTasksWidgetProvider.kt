@@ -123,6 +123,29 @@ class HayatyTasksWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        // Clean up when widget is removed from home screen
+        super.onDeleted(context, appWidgetIds)
+        try {
+            for (appWidgetId in appWidgetIds) {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                appWidgetManager.updateAppWidget(appWidgetId, RemoteViews(context.packageName, R.layout.hayaty_tasks_widget))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onDisabled(context: Context) {
+        // Called when the last widget instance of this provider is deleted
+        super.onDisabled(context)
+        try {
+            // Clean up any global resources or listeners here
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     companion object {
         fun triggerUpdate(context: Context) {
             val intent = Intent(context, HayatyTasksWidgetProvider::class.java).apply {
@@ -181,7 +204,7 @@ private suspend fun updateTasksWidget(
                 // Be careful to use unique requestCode per slot to prevent Android from caching identical intents
                 val pendingCheckIntent = PendingIntent.getBroadcast(
                     context,
-                    task.id,
+                    appWidgetId * 100 + task.id,
                     checkIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
@@ -194,7 +217,7 @@ private suspend fun updateTasksWidget(
                 }
                 val pendingDeleteIntent = PendingIntent.getBroadcast(
                     context,
-                    task.id + 10000,
+                    appWidgetId * 100 + task.id + 10000,
                     deleteIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
@@ -212,7 +235,7 @@ private suspend fun updateTasksWidget(
     }
     val pendingAddTaskIntent = PendingIntent.getActivity(
         context,
-        101,
+        appWidgetId + 20000,
         addTaskIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
@@ -224,7 +247,7 @@ private suspend fun updateTasksWidget(
     }
     val pendingAppIntent = PendingIntent.getActivity(
         context,
-        99,
+        appWidgetId + 30000,
         appIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
