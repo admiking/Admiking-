@@ -42,6 +42,31 @@ class HayatyWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        // Clean up when widget is removed from home screen
+        super.onDeleted(context, appWidgetIds)
+        try {
+            for (appWidgetId in appWidgetIds) {
+                // Cancel any pending intents associated with this widget
+                // This prevents memory leaks and dangling broadcasts
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                appWidgetManager.updateAppWidget(appWidgetId, RemoteViews(context.packageName, R.layout.hayaty_widget))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onDisabled(context: Context) {
+        // Called when the last widget instance of this provider is deleted
+        super.onDisabled(context)
+        try {
+            // Clean up any global resources or listeners here
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         val action = intent.action
